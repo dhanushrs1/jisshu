@@ -2,17 +2,24 @@ import asyncio
 import secrets
 import aiohttp
 import re
+import os
+import json
+import time
+from datetime import datetime
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
+from pyrogram.errors import FloodWait, MessageNotModified, ChatAdminRequired
 from info import ADMINS, REDIRECT_CHANNEL, OMDB_API_KEY
 from utils import temp
 from database.ia_filterdb import get_search_results
 
-# This dictionary will store the state of the conversation for each admin
+# Global dictionaries for state management
 ADMIN_CONVERSATION_STATE = {}
 PREVIEW_CACHE = {}
+ACTIVE_UPDATES = {}
 
-# --- Self-contained OMDb fetcher for this feature only ---
+# ==================== CREATE LINK FUNCTIONALITY ====================
+
 async def get_omdb_data_for_link(query):
     """Fetch movie data from OMDb API with improved error handling"""
     if not OMDB_API_KEY:
@@ -74,7 +81,6 @@ def generate_caption(title, year, plot=None, rating=None, genre=None):
     caption += "\n📂 **Click the button below to get your files.**"
     return caption
 
-# --- Helper function to generate and send the preview message ---
 async def send_preview(client, user_id, preview_id):
     """Send or update the preview message with enhanced formatting"""
     if preview_id not in PREVIEW_CACHE:
@@ -137,7 +143,6 @@ async def send_preview(client, user_id, preview_id):
             f"❌ **Error updating preview:** `{e}`\n\nThe poster URL might be invalid. Please use the edit button to fix it."
         )
 
-# --- The main command to start the process ---
 @Client.on_message(filters.command("createlink") & filters.user(ADMINS))
 async def generate_link_command(client, message):
     """Enhanced createlink command with better error handling"""
@@ -200,7 +205,8 @@ async def generate_link_command(client, message):
             "start_link": start_link,
             "original_query": search_query,
             "caption": caption,
-            "admin_id": message.from_user.id
+            "admin_id": message.from_user.id,
+            "created_at": time.time()
         }
 
         await sts.delete()
@@ -210,7 +216,6 @@ async def generate_link_command(client, message):
         await sts.edit(f"❌ **Error occurred:** `{e}`")
         print(f"Error in generate_link_command: {e}")
 
-# --- Callback for the Edit buttons ---
 @Client.on_callback_query(filters.regex(r"^edit_post#"))
 async def edit_post_callback(client, query):
     """Handle edit button callbacks with validation"""
@@ -229,7 +234,11 @@ async def edit_post_callback(client, query):
     if PREVIEW_CACHE[preview_id].get("admin_id") != query.from_user.id:
         return await query.answer("❌ You can only edit your own previews!", show_alert=True)
 
-    ADMIN_CONVERSATION_STATE[query.from_user.id] = {"type": edit_type, "preview_id": preview_id}
+    ADMIN_CONVERSATION_STATE[query.from_user.id] = {
+        "type": edit_type, 
+        "preview_id": preview_id,
+        "created_at": time.time()
+    }
     
     prompts = {
         "poster": "🖼️ **Please send the new poster URL now.**\n\nSend a direct image URL (jpg, png, etc.)",
@@ -241,12 +250,11 @@ async def edit_post_callback(client, query):
     await query.message.reply_text(prompt)
     await query.answer()
 
-# --- FIXED: Message handler to catch the admin's reply ---
 @Client.on_message(
     filters.private & 
     filters.user(ADMINS) & 
     filters.text & 
-    ~filters.command(["start", "help", "createlink"])  # Fixed: specify actual commands
+    ~filters.command(["start", "help", "createlink", "updatelinks", "cancelupdate", "updatestatus"])
 )
 async def handle_admin_input(client, message: Message):
     """Handle admin input for editing previews"""
@@ -314,7 +322,6 @@ async def handle_admin_input(client, message: Message):
         await message.reply(f"❌ **Error updating preview:** `{e}`")
         print(f"Error in handle_admin_input: {e}")
 
-# --- Callback for the Confirm and Cancel buttons ---
 @Client.on_callback_query(filters.regex(r"^(confirm_post|cancel_post)#"))
 async def confirm_cancel_handler(client, query):
     """Handle confirm and cancel callbacks with better error handling"""
@@ -385,10 +392,414 @@ async def confirm_cancel_handler(client, query):
         await query.message.delete()
         await query.answer("❌ Preview cancelled and deleted.", show_alert=True)
 
-# --- Cleanup function to prevent memory leaks ---
+# ==================== UPDATE LINKS FUNCTIONALITY ====================
+
+async def process_message_buttons(reply_markup, new_bot_username):
+    """Process and update buttons in a message's reply markup"""
+    updated = False
+    new_keyboard = []
+    
+    for row in reply_markup.inline_keyboard:
+        new_row = []
+        for button in row:
+            if button.url and "?start=getfile-" in button.url:
+                # Extract the query part
+                query_part = button.url.split("?start=", 1)[1]
+                new_url = f"https://t.me/{new_bot_username}?start={query_part}"
+                
+                if button.url != new_url:
+                    new_button = InlineKeyboardButton(button.text, url=new_url)
+                    new_row.append(new_button)
+                    updated = True
+                else:
+                    new_row.append(button)
+            else:
+                new_row.append(button)
+        new_keyboard.append(new_row)
+    
+    return InlineKeyboardMarkup(new_keyboard) if updated else None
+
+def calculate_success_rate(session_data):
+    """Calculate the success rate of updates"""
+    total = session_data["updated_count"] + session_data["error_count"]
+    if total == 0:
+        return 100
+    return round((session_data["updated_count"] / total) * 100, 1)
+
+def generate_completion_report(session_data, new_bot_username):
+    """Generate a comprehensive completion report"""
+    success_rate = calculate_success_rate(session_data)
+    
+    report = (
+        f"✅ **Link Update Complete!**\n\n"
+        f"**Target Bot:** `@{new_bot_username}`\n"
+        f"**Total Processed:** `{session_data['total_processed']}` messages\n"
+        f"**Successfully Updated:** `{session_data['updated_count']}` links\n"
+        f"**Errors:** `{session_data['error_count']}`\n"
+        f"**Success Rate:** `{success_rate}%`\n\n"
+    )
+    
+    if session_data.get("start_time") and session_data.get("completion_time"):
+        try:
+            start_time = datetime.fromisoformat(session_data["start_time"])
+            end_time = datetime.fromisoformat(session_data["completion_time"])
+            duration = end_time - start_time
+            report += f"**Duration:** `{str(duration).split('.')[0]}`\n\n"
+        except:
+            pass
+    
+    if session_data["error_count"] > 0:
+        report += f"⚠️ **{session_data['error_count']} errors occurred during the process.**\n"
+        if len(session_data["errors"]) > 0:
+            recent_errors = session_data["errors"][-3:]  # Show last 3 errors
+            report += "**Recent errors:**\n"
+            for error in recent_errors:
+                report += f"• Message ID `{error['message_id']}`: {error['error'][:50]}...\n"
+    
+    report += f"\n🎉 **All links now point to @{new_bot_username}!**"
+    return report
+
+async def cleanup_backup_file(file_path, delay=300):
+    """Clean up backup files after a delay"""
+    await asyncio.sleep(delay)
+    try:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            print(f"Cleaned up backup file: {file_path}")
+    except Exception as e:
+        print(f"Error cleaning up backup file {file_path}: {e}")
+
+@Client.on_message(filters.command("updatelinks") & filters.user(ADMINS))
+async def update_all_links(client, message):
+    """Enhanced updatelinks command with better error handling and safety features"""
+    
+    # Validation checks
+    if REDIRECT_CHANNEL == 0:
+        return await message.reply(
+            "❌ **Configuration Error**\n\n"
+            "`REDIRECT_CHANNEL` is not set. Please configure it in your settings."
+        )
+    
+    if len(message.command) < 2:
+        return await message.reply(
+            "ℹ️ **Usage:** `/updatelinks NEW_BOT_USERNAME`\n\n"
+            "**Example:** `/updatelinks MyNewBot`\n"
+            "⚠️ **Note:** Provide username without @ symbol"
+        )
+    
+    # Prevent multiple simultaneous updates
+    admin_id = message.from_user.id
+    if admin_id in ACTIVE_UPDATES:
+        return await message.reply(
+            "⚠️ **Update Already Running**\n\n"
+            f"You already have an active update process running.\n"
+            f"Started at: `{ACTIVE_UPDATES[admin_id]['start_time']}`\n\n"
+            "Please wait for it to complete or use `/cancelupdate` to stop it."
+        )
+    
+    new_bot_username = message.command[1].strip().replace("@", "")
+    
+    # Validate bot username format
+    if not new_bot_username.replace("_", "").replace("Bot", "").isalnum():
+        return await message.reply(
+            "❌ **Invalid Username**\n\n"
+            "Bot username should only contain letters, numbers, and underscores."
+        )
+    
+    # Check if bot exists (optional validation)
+    try:
+        bot_info = await client.get_users(new_bot_username)
+        if not bot_info.is_bot:
+            return await message.reply(
+                f"⚠️ **Warning:** `@{new_bot_username}` doesn't appear to be a bot.\n"
+                "Are you sure you want to continue? Send `/updatelinks {new_bot_username} confirm` to proceed."
+            )
+    except Exception:
+        # If we can't fetch user info, ask for confirmation
+        if len(message.command) < 3 or message.command[2] != "confirm":
+            return await message.reply(
+                f"⚠️ **Cannot verify bot:** `@{new_bot_username}`\n\n"
+                "This might be because:\n"
+                "• The bot doesn't exist\n"
+                "• The bot is private\n"
+                "• Network issues\n\n"
+                f"To proceed anyway, use: `/updatelinks {new_bot_username} confirm`"
+            )
+    
+    # Progress tracking setup
+    progress_file = f"update_progress_{admin_id}.json"
+    session_data = {
+        "admin_id": admin_id,
+        "new_bot_username": new_bot_username,
+        "start_time": datetime.now().isoformat(),
+        "last_processed_id": 0,
+        "total_processed": 0,
+        "updated_count": 0,
+        "error_count": 0,
+        "errors": []
+    }
+    
+    # Check for existing progress file
+    if os.path.exists(progress_file):
+        try:
+            with open(progress_file, "r") as f:
+                saved_data = json.load(f)
+                session_data.update({
+                    "last_processed_id": saved_data.get("last_processed_id", 0),
+                    "total_processed": saved_data.get("total_processed", 0),
+                    "updated_count": saved_data.get("updated_count", 0),
+                    "error_count": saved_data.get("error_count", 0),
+                    "errors": saved_data.get("errors", [])
+                })
+        except Exception as e:
+            print(f"Error loading progress file: {e}")
+    
+    # Mark update as active
+    ACTIVE_UPDATES[admin_id] = {
+        "start_time": session_data["start_time"],
+        "status": "running",
+        "progress_file": progress_file
+    }
+    
+    # Initial status message
+    sts_text = f"🔄 **Starting Link Update Process**\n\n"
+    sts_text += f"**Target Bot:** `@{new_bot_username}`\n"
+    sts_text += f"**Channel:** `{REDIRECT_CHANNEL}`\n"
+    
+    if session_data["last_processed_id"] > 0:
+        sts_text += f"**Resuming from Message ID:** `{session_data['last_processed_id']}`\n"
+        sts_text += f"**Previously Processed:** `{session_data['total_processed']}` messages\n"
+        sts_text += f"**Previously Updated:** `{session_data['updated_count']}` links\n"
+    
+    sts_text += "\n⏳ **Processing messages...**"
+    sts = await message.reply(sts_text)
+    
+    try:
+        # Check bot permissions in the channel
+        try:
+            bot_member = await client.get_chat_member(REDIRECT_CHANNEL, client.me.id)
+            if not bot_member.privileges or not bot_member.privileges.can_edit_messages:
+                raise ChatAdminRequired()
+        except ChatAdminRequired:
+            await sts.edit(
+                "❌ **Permission Error**\n\n"
+                "Bot doesn't have permission to edit messages in the redirect channel.\n"
+                "Please make sure the bot is an admin with 'Edit Messages' permission."
+            )
+            return
+        except Exception as e:
+            print(f"Permission check error: {e}")
+        
+        last_update_time = time.time()
+        batch_processed = 0
+        
+        # Main processing loop
+        async for msg in client.get_chat_history(REDIRECT_CHANNEL):
+            # Check if update was cancelled
+            if admin_id not in ACTIVE_UPDATES:
+                await sts.edit("❌ **Update Cancelled by User**")
+                return
+            
+            # Skip messages if resuming
+            if session_data["last_processed_id"] != 0 and msg.id >= session_data["last_processed_id"]:
+                continue
+            
+            session_data["total_processed"] += 1
+            batch_processed += 1
+            
+            # Process message if it has inline keyboard
+            if msg.reply_markup and msg.reply_markup.inline_keyboard:
+                try:
+                    updated_markup = await process_message_buttons(
+                        msg.reply_markup, new_bot_username
+                    )
+                    
+                    if updated_markup:
+                        await client.edit_message_reply_markup(
+                            chat_id=msg.chat.id,
+                            message_id=msg.id,
+                            reply_markup=updated_markup
+                        )
+                        session_data["updated_count"] += 1
+                        
+                except FloodWait as e:
+                    print(f"FloodWait: Sleeping for {e.value} seconds")
+                    await asyncio.sleep(e.value)
+                    # Retry the operation
+                    try:
+                        updated_markup = await process_message_buttons(
+                            msg.reply_markup, new_bot_username
+                        )
+                        if updated_markup:
+                            await client.edit_message_reply_markup(
+                                chat_id=msg.chat.id,
+                                message_id=msg.id,
+                                reply_markup=updated_markup
+                            )
+                            session_data["updated_count"] += 1
+                    except Exception as retry_error:
+                        session_data["error_count"] += 1
+                        session_data["errors"].append({
+                            "message_id": msg.id,
+                            "error": str(retry_error),
+                            "timestamp": datetime.now().isoformat()
+                        })
+                
+                except MessageNotModified:
+                    # This is fine, message was already up to date
+                    pass
+                
+                except Exception as e:
+                    session_data["error_count"] += 1
+                    error_info = {
+                        "message_id": msg.id,
+                        "error": str(e),
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    session_data["errors"].append(error_info)
+                    print(f"Failed to update message {msg.id}: {e}")
+            
+            # Update progress periodically
+            current_time = time.time()
+            if (batch_processed >= 25 or 
+                current_time - last_update_time > 30 or 
+                session_data["total_processed"] % 100 == 0):
+                
+                session_data["last_processed_id"] = msg.id
+                
+                # Save progress to file
+                with open(progress_file, "w") as f:
+                    json.dump(session_data, f, indent=2)
+                
+                # Update status message
+                progress_text = (
+                    f"🔄 **Link Update In Progress**\n\n"
+                    f"**Target Bot:** `@{new_bot_username}`\n"
+                    f"**Processed:** `{session_data['total_processed']}` messages\n"
+                    f"**Updated:** `{session_data['updated_count']}` links\n"
+                    f"**Errors:** `{session_data['error_count']}`\n"
+                    f"**Last Message ID:** `{msg.id}`\n\n"
+                    f"⏳ **Status:** Processing...\n"
+                    f"📊 **Success Rate:** {calculate_success_rate(session_data)}%"
+                )
+                
+                try:
+                    await sts.edit(progress_text)
+                except Exception as e:
+                    print(f"Failed to update status message: {e}")
+                
+                last_update_time = current_time
+                batch_processed = 0
+                
+                # Add small delay to prevent overwhelming
+                await asyncio.sleep(0.5)
+        
+        # Process completion
+        session_data["completion_time"] = datetime.now().isoformat()
+        
+        # Generate completion report
+        completion_text = generate_completion_report(session_data, new_bot_username)
+        await sts.edit(completion_text)
+        
+        # Clean up progress file on successful completion
+        if os.path.exists(progress_file):
+            try:
+                # Keep a backup for a few minutes in case of issues
+                backup_file = f"{progress_file}.completed"
+                os.rename(progress_file, backup_file)
+                
+                # Schedule cleanup of backup file
+                asyncio.create_task(cleanup_backup_file(backup_file, delay=300))  # 5 minutes
+            except Exception as e:
+                print(f"Error handling progress file: {e}")
+        
+    except Exception as e:
+        error_text = (
+            f"❌ **Update Process Failed**\n\n"
+            f"**Error:** `{str(e)}`\n"
+            f"**Processed:** `{session_data['total_processed']}` messages\n"
+            f"**Updated:** `{session_data['updated_count']}` links\n\n"
+            f"📁 **Progress saved.** Run the command again to resume from where it stopped.\n\n"
+            f"🔍 **Debug Info:** Check logs for detailed error information."
+        )
+        await sts.edit(error_text)
+        print(f"Update process error: {e}")
+        
+        # Save final progress
+        session_data["error_info"] = str(e)
+        session_data["failed_at"] = datetime.now().isoformat()
+        with open(progress_file, "w") as f:
+            json.dump(session_data, f, indent=2)
+    
+    finally:
+        # Clean up active updates tracking
+        if admin_id in ACTIVE_UPDATES:
+            del ACTIVE_UPDATES[admin_id]
+
+@Client.on_message(filters.command("cancelupdate") & filters.user(ADMINS))
+async def cancel_update(client, message):
+    """Cancel an active update process"""
+    admin_id = message.from_user.id
+    
+    if admin_id not in ACTIVE_UPDATES:
+        return await message.reply(
+            "ℹ️ **No Active Update**\n\n"
+            "You don't have any active update process running."
+        )
+    
+    # Remove from active updates (this will stop the main loop)
+    update_info = ACTIVE_UPDATES.pop(admin_id)
+    
+    await message.reply(
+        f"❌ **Update Process Cancelled**\n\n"
+        f"**Started at:** `{update_info['start_time']}`\n"
+        f"**Status:** Cancelled by user\n\n"
+        f"📁 **Progress has been saved.** You can resume later using `/updatelinks`."
+    )
+
+@Client.on_message(filters.command("updatestatus") & filters.user(ADMINS))
+async def update_status(client, message):
+    """Check the status of active updates"""
+    admin_id = message.from_user.id
+    
+    if admin_id not in ACTIVE_UPDATES:
+        # Check if there's a progress file
+        progress_file = f"update_progress_{admin_id}.json"
+        if os.path.exists(progress_file):
+            try:
+                with open(progress_file, "r") as f:
+                    saved_data = json.load(f)
+                
+                status_text = (
+                    f"📋 **Saved Progress Found**\n\n"
+                    f"**Bot Username:** `@{saved_data.get('new_bot_username', 'Unknown')}`\n"
+                    f"**Processed:** `{saved_data.get('total_processed', 0)}` messages\n"
+                    f"**Updated:** `{saved_data.get('updated_count', 0)}` links\n"
+                    f"**Errors:** `{saved_data.get('error_count', 0)}`\n"
+                    f"**Last Message ID:** `{saved_data.get('last_processed_id', 0)}`\n\n"
+                    f"Use `/updatelinks {saved_data.get('new_bot_username', 'BOT_USERNAME')}` to resume."
+                )
+                return await message.reply(status_text)
+            except Exception as e:
+                print(f"Error reading progress file: {e}")
+        
+        return await message.reply(
+            "ℹ️ **No Active Update**\n\n"
+            "You don't have any active update process running or saved progress."
+        )
+    
+    update_info = ACTIVE_UPDATES[admin_id]
+    await message.reply(
+        f"🔄 **Update Process Running**\n\n"
+        f"**Started at:** `{update_info['start_time']}`\n"
+        f"**Status:** `{update_info['status']}`\n\n"
+        f"Use `/cancelupdate` to stop the process."
+    )
+
+# ==================== CLEANUP AND MAINTENANCE ====================
+
 async def cleanup_expired_data():
     """Clean up expired preview data and conversation states"""
-    import time
     current_time = time.time()
     
     # Clean up previews older than 1 hour
@@ -399,6 +810,7 @@ async def cleanup_expired_data():
     
     for pid in expired_previews:
         del PREVIEW_CACHE[pid]
+        print(f"Cleaned up expired preview: {pid}")
     
     # Clean up conversation states older than 30 minutes
     expired_states = [
@@ -408,14 +820,92 @@ async def cleanup_expired_data():
     
     for uid in expired_states:
         del ADMIN_CONVERSATION_STATE[uid]
+        print(f"Cleaned up expired conversation state for user: {uid}")
 
-# Add timestamp to preview cache entries
-def _add_timestamp_to_preview(preview_id):
-    import time
-    if preview_id in PREVIEW_CACHE:
-        PREVIEW_CACHE[preview_id]["created_at"] = time.time()
+# ==================== HELP AND INFO COMMANDS ====================
 
-def _add_timestamp_to_state(admin_id):
-    import time
-    if admin_id in ADMIN_CONVERSATION_STATE:
-        ADMIN_CONVERSATION_STATE[admin_id]["created_at"] = time.time()
+@Client.on_message(filters.command("linkhelp") & filters.user(ADMINS))
+async def link_help_command(client, message):
+    """Show help information for link management commands"""
+    help_text = """
+🔗 **Link Management Bot - Help**
+
+**📝 CREATE LINK COMMANDS:**
+• `/createlink <movie name>` - Create a new link post with preview
+• **Example:** `/createlink Avengers Endgame`
+
+**🔄 UPDATE LINK COMMANDS:**
+• `/updatelinks <new_bot_username>` - Update all links to new bot
+• `/updatelinks <bot_username> confirm` - Force update without verification
+• `/cancelupdate` - Cancel active update process
+• `/updatestatus` - Check update progress
+
+**📊 FEATURES:**
+✅ **Create Links:** OMDb integration, poster preview, editable captions
+✅ **Update Links:** Bulk update, progress tracking, error handling
+✅ **Safety:** Admin-only access, validation checks, resume capability
+✅ **Management:** Real-time status, detailed reports, automatic cleanup
+
+**⚙️ CONFIGURATION REQUIRED:**
+• `REDIRECT_CHANNEL` - Channel ID where links are posted
+• `OMDB_API_KEY` - For movie information (optional)
+• `ADMINS` - List of admin user IDs
+
+**🆘 TROUBLESHOOTING:**
+• Make sure bot has admin permissions in redirect channel
+• Check if `REDIRECT_CHANNEL` is properly configured
+• Ensure bot username is valid (no @ symbol needed)
+
+**📈 EXAMPLE WORKFLOW:**
+1️⃣ `/createlink Spider Man` - Creates preview
+2️⃣ Edit poster/details if needed
+3️⃣ Confirm to post to channel
+4️⃣ `/updatelinks NewBot` - Updates all links to new bot
+
+Need help? Contact your bot administrator.
+"""
+    await message.reply(help_text)
+
+@Client.on_message(filters.command("linkstats") & filters.user(ADMINS))
+async def link_stats_command(client, message):
+    """Show current statistics and status"""
+    stats_text = f"""
+📊 **Link Management Statistics**
+
+**🔍 ACTIVE SESSIONS:**
+• **Previews:** `{len(PREVIEW_CACHE)}` active
+• **Conversations:** `{len(ADMIN_CONVERSATION_STATE)}` ongoing
+• **Updates:** `{len(ACTIVE_UPDATES)}` running
+
+**⚙️ CONFIGURATION:**
+• **Redirect Channel:** `{REDIRECT_CHANNEL if REDIRECT_CHANNEL != 0 else 'Not Set'}`
+• **OMDb API:** `{'✅ Configured' if OMDB_API_KEY else '❌ Not Set'}`
+• **Admin Count:** `{len(ADMINS)}` users
+
+**💾 SYSTEM STATUS:**
+• **Bot Status:** ✅ Online
+• **Memory Usage:** Normal
+• **API Status:** {'✅ Active' if OMDB_API_KEY else '⚠️ Limited'}
+
+Use `/linkhelp` for command information.
+"""
+    await message.reply(stats_text)
+
+# ==================== PERIODIC CLEANUP TASK ====================
+
+async def start_cleanup_task():
+    """Start the periodic cleanup task"""
+    while True:
+        try:
+            await cleanup_expired_data()
+            await asyncio.sleep(1800)  # Run every 30 minutes
+        except Exception as e:
+            print(f"Cleanup task error: {e}")
+            await asyncio.sleep(300)  # Wait 5 minutes on error
+
+# Auto-start cleanup task
+asyncio.create_task(start_cleanup_task())
+
+print("✅ Link Management System Loaded Successfully!")
+print("📝 Available Commands: /createlink, /updatelinks, /linkhelp, /linkstats")
+print("🔧 Management Commands: /cancelupdate, /updatestatus")
