@@ -20,6 +20,7 @@ API_ID = int(environ.get("API_ID", ""))
 API_HASH = environ.get("API_HASH", "")
 BOT_TOKEN = environ.get("BOT_TOKEN", "")
 PORT = environ.get("PORT", "")
+OMDB_API_KEY = environ.get("OMDB_API_KEY", "c9cfd7d6")
 
 # Owners
 ADMINS = [
