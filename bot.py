@@ -38,7 +38,7 @@ from Jisshu.bot.clients import initialize_clients
 ppath = "plugins/*.py"
 files = glob.glob(ppath)
 JisshuBot.start()
-loop = asyncio.get_event_loop()
+loop = asyncio.get_running_loop()
 
 pyrogram.utils.MIN_CHANNEL_ID = -1009147483647
 
