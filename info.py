@@ -43,6 +43,7 @@ AUTH_REQ_CHANNEL = int(environ.get("AUTH_REQ_CHANNEL", ""))
 LOG_CHANNEL = int(environ.get("LOG_CHANNEL", ""))
 LOG_API_CHANNEL = int(environ.get("LOG_API_CHANNEL", ""))
 LOG_VR_CHANNEL = int(environ.get("LOG_VR_CHANNEL", ""))
+REDIRECT_CHANNEL = int(environ.get("REDIRECT_CHANNEL", "-1002596399051"))
 
 # MongoDB
 DATABASE_URI = environ.get("DATABASE_URI", "")
