@@ -6,97 +6,89 @@
   <title>{{file_name}}</title>
   <meta name="description" content="Stream high-quality videos and movies in 1080p. Experience seamless playback with multiple player options." />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  
-  <!-- External CSS -->
+
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
   <link href="https://fonts.googleapis.com/css?family=Poppins:400,500,600,700" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdn.plyr.io/3.6.12/plyr.css" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
-  <link href="https://developer-six-dusky.vercel.app/548/551/play.css" rel="stylesheet" />
+  <style>
+    body {
+      background-color: #0b0c10;
+      color: #c5c6c7;
+      font-family: 'Poppins', sans-serif;
+    }
+    .header {
+      background-color: {{ jisshu_colours.header.background }};
+      color: {{ jisshu_colours.header.color }};
+      padding: 1rem;
+      border-bottom: 2px solid #66fcf1;
+    }
+    .header h1 {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #66fcf1;
+    }
+    .btn {
+        border-radius: 25px;
+        font-weight: 600;
+        transition: transform 0.2s;
+    }
+    .btn:hover {
+        transform: scale(1.05);
+    }
+    .card {
+        background-color: #1f2833;
+        border: none;
+        border-radius: 15px;
+    }
+  </style>
 </head>
 
-<body class="bg-dark text-light">
+<body>
   <div class="d-flex flex-column min-vh-100">
-    <!-- Header -->
-    <header class="bg-primary text-white py-2 shadow" style="background-color: {{ jisshu_colours.header.background }} !important; color: {{ jisshu_colours.header.color }} !important;">
-      <div class="d-flex justify-content-between align-items-center container">
-        <h1 class="h4 mb-0 fw-bold">{{template_ne}}</h1>
-        <button id="theme-toggle-btn" class="btn btn-light theme-toggle-btn">
-          <i class="fa-solid fa-sun"></i> Light Mode
-        </button>
-      </div>
+    <header class="header text-center shadow-lg">
+      <h1 class="mb-0">HD Cinema</h1>
     </header>
-    
-    <!-- Main content -->
-    <main class="flex-grow-1 container py-3">
-      <div class="player-wrapper mb-3">
-        <video id="myVideo" src="{{file_url}}" class="w-100" controls>
+
+    <main class="flex-grow-1 container py-4">
+      <div class="player-wrapper mb-4 shadow-lg">
+        <video id="myVideo" src="{{file_url}}" class="w-100" controls style="border-radius: 15px;">
           Your browser does not support the video tag.
         </video>
         <script src="https://cdn.plyr.io/3.6.12/plyr.js"></script>
+        <script>const player = new Plyr('#myVideo');</script>
       </div>
-      
-      <div class="d-flex justify-content-between mb-2 flex-wrap gap-2">
-        <a onclick="mx_player()" class="btn btn-primary flex-fill" style="border: none; background-color: {{ jisshu_colours.mx_player.background }}; color: {{ jisshu_colours.mx_player.color }};">
-          <i class="fa fa-play"></i> <b>MX Player</b>
-        </a>
-        <a onclick="vlc_player()" class="btn btn-primary flex-fill" style="border: none; background-color: {{ jisshu_colours.vlc_player.background }}; color: {{ jisshu_colours.vlc_player.color }};">
-          <i class="fa fa-play"></i> <b>VLC Player</b>
-        </a>
-        <a onclick="playit_player()" class="btn btn-primary flex-fill" style="border: none; background-color: {{ jisshu_colours.playit_player.background }}; color: {{ jisshu_colours.playit_player.color }};">
-          <i class="fa fa-play"></i> <b>Play it</b>
-        </a>
-      </div>
-      
-      <div class="row g-3 mb-2">
-        <div class="col-md-6">
-          <a onclick="streamDownload()" class="btn btn-success w-100" style="border: none; background-color: {{ jisshu_colours.download.background }}; color: {{ jisshu_colours.download.color }};">
-            <i class="fa-solid fa-download me-2"></i> Download
-          </a>
+
+      <div class="d-grid gap-2 mb-3">
+        <div class="row g-2">
+            <div class="col-md-4"><a onclick="mx_player()" class="btn btn-block" style="background-color: {{ jisshu_colours.mx_player.background }}; color: {{ jisshu_colours.mx_player.color }};"><i class="fa fa-play"></i> MX Player</a></div>
+            <div class="col-md-4"><a onclick="vlc_player()" class="btn btn-block" style="background-color: {{ jisshu_colours.vlc_player.background }}; color: {{ jisshu_colours.vlc_player.color }};"><i class="fa fa-play"></i> VLC Player</a></div>
+            <div class="col-md-4"><a onclick="playit_player()" class="btn btn-block" style="background-color: {{ jisshu_colours.playit_player.background }}; color: {{ jisshu_colours.playit_player.color }};"><i class="fa fa-play"></i> Playit</a></div>
         </div>
+        <a onclick="streamDownload()" class="btn btn-success"><i class="fa-solid fa-download me-2"></i> Download</a>
+        <a id="demo4" onclick="showLinkModal('{{tg_button}}')" class="btn btn-warning" style="background-color: {{ jisshu_colours.create_link.background }}; color: {{ jisshu_colours.create_link.color }};"><i class="fa-brands fa-telegram"></i> Create Like This Link</a>
+        <a onclick="shareButton()" class="btn btn-danger"><i class="fa fa-share-alt"></i> Share Now</a>
       </div>
-      
-      <a id="demo4" onclick="showLinkModal('{{tg_button}}')" class="btn btn-warning w-100 mb-2" style="border: none; background-color: {{ jisshu_colours.create_link.background }}; color: {{ jisshu_colours.create_link.color }};">
-        <i class="fa-brands fa-telegram"></i> Create Like This Link
-      </a>
-      
-      <a onclick="shareButton()" class="btn btn-danger w-100 mb-3" style="border: none; background-color: {{ jisshu_colours.share.background }}; color: {{ jisshu_colours.share.color }};">
-        <i class="fa fa-share-alt"></i> Share Now
-      </a>
-      
-      <div class="card bg-dark text-light border-secondary mb-4" style="background-color: {{ jisshu_colours.file_information.background }}  !important; color: {{ jisshu_colours.file_information.color }}  !important;">
+
+      <div class="card bg-dark text-light border-secondary mb-4 shadow">
         <div class="card-header border-secondary">
           <h5 class="mb-0"><i class="fa-solid fa-circle-info me-2"></i> File Information</h5>
         </div>
         <div class="card-body">
-          <div class="row">
-            <div class="col-md-6">
-              <p><strong>Name: </strong>{{file_name}}</p>
-              <p><strong>Size: </strong>{{file_size}}</p>
-            </div>
-          </div>
+          <p><strong>Name: </strong>{{file_name}}</p>
+          <p><strong>Size: </strong>{{file_size}}</p>
         </div>
       </div>
-      
-      <div class="alert alert-warning" style="background-color: {{ jisshu_colours.description.background }}; color: {{ jisshu_colours.description.color }};">
+
+      <div class="alert mt-4" style="background-color: {{ jisshu_colours.description.background }}; color: {{ jisshu_colours.description.color }}; border-radius: 15px;">
         <h6 class="fw-bold"><i class="fa-solid fa-triangle-exclamation me-2"></i> Disclaimer</h6>
         <p class="mb-0">{{jisshu_disclaimer}}</p>
-        <div class="button-container">
-          <a href="{{jisshu_report_link}}" class="report">Report</a>
+        <div class="button-container mt-2">
+          <a href="{{jisshu_report_link}}" class="btn btn-sm btn-outline-light">Report</a>
         </div>
       </div>
+    </main>
   </div>
-  </main>
-  <!-- Footer is now generated via JavaScript -->
-  </div>
-  
-  <!-- External JS -->
-  <script src="https://developer-six-dusky.vercel.app/548/551/play.js"></script>
-  <script>
-    document.addEventListener("DOMContentLoaded", () => {
-      console.log("JS Loaded Successfully");
-    });
-  </script>
 </body>
 
 </html>
