@@ -1,5 +1,4 @@
-FROM python:3.10.8-slim-bullseye
-
+FROM python:3.10.8
 WORKDIR /Jisshu-filter-bot
 RUN chmod 777 /Jisshu-filter-bot
 
