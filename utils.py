@@ -109,6 +109,27 @@ async def get_omdb_data(query):
 async def get_poster(query, bulk=False, id=False, file=None):
     if not id:
         query = (query.strip()).lower()
+        
+        # --- NEW LOGIC: Try OMDb first for better accuracy ---
+        omdb_data = await get_omdb_data(query)
+        if omdb_data and omdb_data.get('poster') and omdb_data.get('poster') != "N/A":
+            # If OMDb returns a valid poster, use its data
+            return {
+                "title": omdb_data.get("title"),
+                "year": omdb_data.get("year"),
+                "poster": omdb_data.get("poster"),
+                "genres": omdb_data.get("genres"),
+                "rating": omdb_data.get("rating"),
+                "plot": omdb_data.get("plot"),
+                "votes": "N/A", "aka": "N/A", "seasons": "N/A", "box_office": "N/A", 
+                "localized_title": "N/A", "kind": "movie", "imdb_id": "N/A", "cast": "N/A", 
+                "runtime": "N/A", "countries": "N/A", "certificates": "N/A", "languages": "N/A", 
+                "director": "N/A", "writer": "N/A", "producer": "N/A", "composer": "N/A", 
+                "cinematographer": "N/A", "music_team": "N/A", "distributors": "N/A", 
+                "release_date": omdb_data.get("year"), "url": "#"
+            }
+
+        # --- FALLBACK: Use existing imdbpie search if OMDb fails ---
         title = query
         year = re.findall(r"[1-2]\d{3}$", query, re.IGNORECASE)
         if year:
@@ -120,25 +141,28 @@ async def get_poster(query, bulk=False, id=False, file=None):
                 year = list_to_str(year[:1])
         else:
             year = None
+        
         movieid = imdb.search_movie(title.lower(), results=10)
         if not movieid:
             return None
+        
         if year:
             filtered = list(filter(lambda k: str(k.get("year")) == str(year), movieid))
             if not filtered:
                 filtered = movieid
         else:
             filtered = movieid
-        movieid = list(
-            filter(lambda k: k.get("kind") in ["movie", "tv series"], filtered)
-        )
+        
+        movieid = list(filter(lambda k: k.get("kind") in ["movie", "tv series"], filtered))
         if not movieid:
             movieid = filtered
+        
         if bulk:
             return movieid
         movieid = movieid[0].movieID
     else:
         movieid = query
+
     movie = imdb.get_movie(movieid)
     if movie.get("original air date"):
         date = movie["original air date"]
@@ -146,6 +170,7 @@ async def get_poster(query, bulk=False, id=False, file=None):
         date = movie.get("year")
     else:
         date = "N/A"
+    
     plot = ""
     if not LONG_IMDB_DESCRIPTION:
         plot = movie.get("plot")
@@ -153,6 +178,7 @@ async def get_poster(query, bulk=False, id=False, file=None):
             plot = plot[0]
     else:
         plot = movie.get("plot outline")
+    
     if plot and len(plot) > 800:
         plot = plot[0:800] + "..."
 
