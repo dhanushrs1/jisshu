@@ -3,11 +3,10 @@
 
 <head>
   <meta charset="UTF-8" />
-  <title>{{file_name}}</title>
+  <title>HD Cinema - {{file_name}}</title>
   <meta name="description" content="Stream high-quality videos and movies in 1080p. Experience seamless playback with multiple player options." />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   
-  <!-- External CSS -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
   <link href="https://fonts.googleapis.com/css?family=Poppins:400,500,600,700" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdn.plyr.io/3.6.12/plyr.css" />
@@ -17,17 +16,15 @@
 
 <body class="bg-dark text-light">
   <div class="d-flex flex-column min-vh-100">
-    <!-- Header -->
-    <header class="bg-primary text-white py-2 shadow" style="background-color: {{ jisshu_colours.header.background }} !important; color: {{ jisshu_colours.header.color }} !important;">
+    <header class="bg-primary text-white py-2 shadow" style="background-color: #1a1a1a !important; color: #f0ad4e !important;">
       <div class="d-flex justify-content-between align-items-center container">
-        <h1 class="h4 mb-0 fw-bold">{{template_ne}}</h1>
+        <h1 class="h4 mb-0 fw-bold">HD Cinema</h1>
         <button id="theme-toggle-btn" class="btn btn-light theme-toggle-btn">
           <i class="fa-solid fa-sun"></i> Light Mode
         </button>
       </div>
     </header>
     
-    <!-- Main content -->
     <main class="flex-grow-1 container py-3">
       <div class="player-wrapper mb-3">
         <video id="myVideo" src="{{file_url}}" class="w-100" controls>
@@ -37,34 +34,34 @@
       </div>
       
       <div class="d-flex justify-content-between mb-2 flex-wrap gap-2">
-        <a onclick="mx_player()" class="btn btn-primary flex-fill" style="border: none; background-color: {{ jisshu_colours.mx_player.background }}; color: {{ jisshu_colours.mx_player.color }};">
+        <a onclick="mx_player()" class="btn btn-primary flex-fill" style="border: none; background-color: #8399ff; color: #ffffff;">
           <i class="fa fa-play"></i> <b>MX Player</b>
         </a>
-        <a onclick="vlc_player()" class="btn btn-primary flex-fill" style="border: none; background-color: {{ jisshu_colours.vlc_player.background }}; color: {{ jisshu_colours.vlc_player.color }};">
+        <a onclick="vlc_player()" class="btn btn-primary flex-fill" style="border: none; background-color: #00e929; color: #000000;">
           <i class="fa fa-play"></i> <b>VLC Player</b>
         </a>
-        <a onclick="playit_player()" class="btn btn-primary flex-fill" style="border: none; background-color: {{ jisshu_colours.playit_player.background }}; color: {{ jisshu_colours.playit_player.color }};">
+        <a onclick="playit_player()" class="btn btn-primary flex-fill" style="border: none; background-color: #ff9900; color: #000000;">
           <i class="fa fa-play"></i> <b>Play it</b>
         </a>
       </div>
       
       <div class="row g-3 mb-2">
         <div class="col-md-6">
-          <a onclick="streamDownload()" class="btn btn-success w-100" style="border: none; background-color: {{ jisshu_colours.download.background }}; color: {{ jisshu_colours.download.color }};">
+          <a onclick="streamDownload()" class="btn btn-success w-100" style="border: none; background-color: #00c853; color: #ffffff;">
             <i class="fa-solid fa-download me-2"></i> Download
           </a>
         </div>
       </div>
       
-      <a id="demo4" onclick="showLinkModal('{{tg_button}}')" class="btn btn-warning w-100 mb-2" style="border: none; background-color: {{ jisshu_colours.create_link.background }}; color: {{ jisshu_colours.create_link.color }};">
+      <a id="demo4" onclick="showLinkModal('{{tg_button}}')" class="btn btn-warning w-100 mb-2" style="border: none; background-color: #ffd700; color: #000000;">
         <i class="fa-brands fa-telegram"></i> Create Like This Link
       </a>
       
-      <a onclick="shareButton()" class="btn btn-danger w-100 mb-3" style="border: none; background-color: {{ jisshu_colours.share.background }}; color: {{ jisshu_colours.share.color }};">
+      <a onclick="shareButton()" class="btn btn-danger w-100 mb-3" style="border: none; background-color: #ff1744; color: #ffffff;">
         <i class="fa fa-share-alt"></i> Share Now
       </a>
       
-      <div class="card bg-dark text-light border-secondary mb-4" style="background-color: {{ jisshu_colours.file_information.background }}  !important; color: {{ jisshu_colours.file_information.color }}  !important;">
+      <div class="card bg-dark text-light border-secondary mb-4" style="background-color: #2c3e50 !important; color: #ffffff !important;">
         <div class="card-header border-secondary">
           <h5 class="mb-0"><i class="fa-solid fa-circle-info me-2"></i> File Information</h5>
         </div>
@@ -78,7 +75,7 @@
         </div>
       </div>
       
-      <div class="alert alert-warning" style="background-color: {{ jisshu_colours.description.background }}; color: {{ jisshu_colours.description.color }};">
+      <div class="alert alert-warning" style="background-color: #fff2c8; color: #6c4c00;">
         <h6 class="fw-bold"><i class="fa-solid fa-triangle-exclamation me-2"></i> Disclaimer</h6>
         <p class="mb-0">{{jisshu_disclaimer}}</p>
         <div class="button-container">
@@ -87,10 +84,8 @@
       </div>
   </div>
   </main>
-  <!-- Footer is now generated via JavaScript -->
   </div>
   
-  <!-- External JS -->
   <script src="https://developer-six-dusky.vercel.app/548/551/play.js"></script>
   <script>
     document.addEventListener("DOMContentLoaded", () => {
