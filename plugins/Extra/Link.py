@@ -58,21 +58,31 @@ async def generate_link_with_preview(client, message):
 
     # Send the preview to the admin
     try:
-        if poster_url:
+        # **FIX:** Check if poster_url is a valid HTTP link before sending
+        if poster_url and poster_url.startswith("http"):
             await message.reply_photo(
                 photo=poster_url,
                 caption=f"**PREVIEW**\n\n{caption}",
                 reply_markup=confirm_markup
             )
         else:
+            # Fallback to text if no valid poster is found
             await message.reply_text(
-                text=f"**PREVIEW**\n\n{caption}",
+                text=f"**PREVIEW (No Poster Found)**\n\n{caption}",
                 reply_markup=confirm_markup,
                 disable_web_page_preview=True
             )
         await sts.delete()
     except Exception as e:
-        await sts.edit(f"An error occurred while generating preview: {e}")
+        # This will catch errors if the URL is valid but the image is broken
+        await sts.edit(f"An error occurred while generating the preview photo. It might be a broken image link.\n\n`{e}`\n\nSending a text-only preview instead.")
+        await asyncio.sleep(2)
+        await sts.delete()
+        await message.reply_text(
+                text=f"**PREVIEW (No Poster Found)**\n\n{caption}",
+                reply_markup=confirm_markup,
+                disable_web_page_preview=True
+            )
 
 @Client.on_callback_query(filters.regex(r"^confirm_post#"))
 async def confirm_post_handler(client, query):
@@ -84,12 +94,22 @@ async def confirm_post_handler(client, query):
     preview_data = PREVIEW_CACHE.get(preview_id)
     
     if not preview_data:
-        return await query.message.edit_text("This request has expired or is invalid.")
+        # Check if the message is a photo or text to use the correct edit method
+        if query.message.photo:
+            return await query.message.edit_caption("**This request has expired or is invalid.**")
+        else:
+            return await query.message.edit_text("**This request has expired or is invalid.**")
 
-    await query.message.edit_caption("**Confirmed!** Posting to the Link Hub channel...")
+    # Use edit_caption for photos, edit_text for text messages
+    if query.message.photo:
+        await query.message.edit_caption("**Confirmed!** Posting to the Link Hub channel...")
+    else:
+        await query.message.edit_text("**Confirmed!** Posting to the Link Hub channel...")
+
 
     try:
-        if preview_data["poster"]:
+        # Post the content to the redirect channel
+        if preview_data["poster"] and preview_data["poster"].startswith("http"):
             sent_message = await client.send_photo(
                 chat_id=REDIRECT_CHANNEL,
                 photo=preview_data["poster"],
@@ -106,10 +126,12 @@ async def confirm_post_handler(client, query):
             
         message_link = sent_message.link
         
-        await query.message.edit_caption(
-            caption=f"**Post created successfully!**\n\nHere is the permanent link for **'{preview_data['original_query']}'**:\n\n`{message_link}`",
-            reply_markup=None
-        )
+        # Edit the preview message with the final link
+        final_caption = f"**Post created successfully!**\n\nHere is the permanent link for **'{preview_data['original_query']}'**:\n\n`{message_link}`"
+        if query.message.photo:
+             await query.message.edit_caption(caption=final_caption, reply_markup=None)
+        else:
+            await query.message.edit_text(text=final_caption, reply_markup=None)
         
     except Exception as e:
         await query.message.edit_caption(f"An error occurred while posting: {e}")
