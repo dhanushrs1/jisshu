@@ -11,7 +11,7 @@ PREVIEW_CACHE = {}
 @Client.on_message(filters.command("createlink") & filters.user(ADMINS))
 async def generate_link_with_preview(client, message):
     if REDIRECT_CHANNEL == 0:
-        return await message.reply("`REDIRECT_CHANNEL` is not set. Please configure it.")
+        return await message.reply("`REDIRECT_CHANNEL` is not set. Please configure it in your info.py or environment variables.")
         
     if len(message.command) < 2:
         return await message.reply("Please provide a search query. Usage: `/createlink <movie name>`")
@@ -50,7 +50,7 @@ async def generate_link_with_preview(client, message):
     confirm_markup = InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_post#{preview_id}"),
+                InlineKeyboardButton("✅ Confirm & Post", callback_data=f"confirm_post#{preview_id}"),
                 InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_post#{preview_id}")
             ]
         ]
@@ -74,7 +74,6 @@ async def generate_link_with_preview(client, message):
     except Exception as e:
         await sts.edit(f"An error occurred while generating preview: {e}")
 
-
 @Client.on_callback_query(filters.regex(r"^confirm_post#"))
 async def confirm_post_handler(client, query):
     if query.from_user.id not in ADMINS:
@@ -82,7 +81,6 @@ async def confirm_post_handler(client, query):
         
     preview_id = query.data.split("#")[1]
     
-    # Retrieve data from cache
     preview_data = PREVIEW_CACHE.get(preview_id)
     
     if not preview_data:
@@ -91,7 +89,6 @@ async def confirm_post_handler(client, query):
     await query.message.edit_caption("**Confirmed!** Posting to the Link Hub channel...")
 
     try:
-        # Post the content to the redirect channel
         if preview_data["poster"]:
             sent_message = await client.send_photo(
                 chat_id=REDIRECT_CHANNEL,
@@ -109,16 +106,14 @@ async def confirm_post_handler(client, query):
             
         message_link = sent_message.link
         
-        # Edit the preview message with the final link
         await query.message.edit_caption(
             caption=f"**Post created successfully!**\n\nHere is the permanent link for **'{preview_data['original_query']}'**:\n\n`{message_link}`",
-            reply_markup=None # Remove buttons
+            reply_markup=None
         )
         
     except Exception as e:
         await query.message.edit_caption(f"An error occurred while posting: {e}")
     finally:
-        # Clean up the cache
         if preview_id in PREVIEW_CACHE:
             del PREVIEW_CACHE[preview_id]
 
@@ -129,7 +124,6 @@ async def cancel_post_handler(client, query):
         
     preview_id = query.data.split("#")[1]
     
-    # Clean up the cache
     if preview_id in PREVIEW_CACHE:
         del PREVIEW_CACHE[preview_id]
         
