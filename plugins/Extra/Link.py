@@ -126,8 +126,12 @@ async def edit_post_callback(client, query):
     await query.answer()
 
 # --- CORRECTED Message handler to catch the admin's reply ---
-@Client.on_message(filters.private & filters.user(ADMINS) & filters.text & ~filters.command(prefixes="/"))
+@Client.on_message(filters.private & filters.user(ADMINS) & filters.text)
 async def handle_admin_input(client, message: Message):
+    # This check is crucial to prevent this handler from interfering with other commands
+    if message.text.startswith("/"):
+        return
+
     admin_id = message.from_user.id
     state = ADMIN_CONVERSATION_STATE.get(admin_id)
 
