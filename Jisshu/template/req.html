@@ -39,7 +39,9 @@
         </header>
         <main class="flex-grow-1 container py-4">
             <div class="player-wrapper mb-4">
-                <video id="myVideo" src="{{file_url}}" class="w-100" controls></video>
+                <video id="myVideo" class="w-100" controls crossorigin playsinline>
+                     <source src="{{file_url}}" type="video/mp4">
+                </video>
             </div>
             <div class="d-grid gap-3 mb-4">
                 <div class="row g-3">
@@ -71,7 +73,10 @@
     </div>
     <script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
     <script>
-        const player = new Plyr('#myVideo');
+        const player = new Plyr('#myVideo', {
+            muted: false,
+            volume: 1
+        });
         document.getElementById('theme-toggle-btn').addEventListener('click', () => {
             document.body.classList.toggle('bg-light');
             document.body.classList.toggle('text-dark');
