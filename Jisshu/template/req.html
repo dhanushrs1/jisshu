@@ -1,97 +1,250 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-  <meta charset="UTF-8" />
-  <title>HD Cinema - {{file_name}}</title>
-  <meta name="description" content="Stream high-quality videos and movies in 1080p. Experience seamless playback with multiple player options." />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
-  <link href="https://fonts.googleapis.com/css?family=Poppins:400,500,600,700" rel="stylesheet" />
-  <link rel="stylesheet" href="https://cdn.plyr.io/3.6.12/plyr.css" />
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
-  <link href="https://developer-six-dusky.vercel.app/548/551/play.css" rel="stylesheet" />
-</head>
-
-<body class="bg-dark text-light">
-  <div class="d-flex flex-column min-vh-100">
-    <header class="bg-primary text-white py-2 shadow" style="background-color: #1a1a1a !important; color: #f0ad4e !important;">
-      <div class="d-flex justify-content-between align-items-center container">
-        <h1 class="h4 mb-0 fw-bold">HD Cinema</h1>
-        <button id="theme-toggle-btn" class="btn btn-light theme-toggle-btn">
-          <i class="fa-solid fa-sun"></i> Light Mode
-        </button>
-      </div>
-    </header>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stream: {{file_name}} - HD Cinema</title>
     
-    <main class="flex-grow-1 container py-3">
-      <div class="player-wrapper mb-3">
-        <video id="myVideo" src="{{file_url}}" class="w-100" controls>
-          Your browser does not support the video tag.
-        </video>
-        <script src="https://cdn.plyr.io/3.6.12/plyr.js"></script>
-      </div>
-      
-      <div class="d-flex justify-content-between mb-2 flex-wrap gap-2">
-        <a onclick="mx_player()" class="btn btn-primary flex-fill" style="border: none; background-color: #8399ff; color: #ffffff;">
-          <i class="fa fa-play"></i> <b>MX Player</b>
-        </a>
-        <a onclick="vlc_player()" class="btn btn-primary flex-fill" style="border: none; background-color: #00e929; color: #000000;">
-          <i class="fa fa-play"></i> <b>VLC Player</b>
-        </a>
-        <a onclick="playit_player()" class="btn btn-primary flex-fill" style="border: none; background-color: #ff9900; color: #000000;">
-          <i class="fa fa-play"></i> <b>Play it</b>
-        </a>
-      </div>
-      
-      <div class="row g-3 mb-2">
-        <div class="col-md-6">
-          <a onclick="streamDownload()" class="btn btn-success w-100" style="border: none; background-color: #00c853; color: #ffffff;">
-            <i class="fa-solid fa-download me-2"></i> Download
-          </a>
-        </div>
-      </div>
-      
-      <a id="demo4" onclick="showLinkModal('{{tg_button}}')" class="btn btn-warning w-100 mb-2" style="border: none; background-color: #ffd700; color: #000000;">
-        <i class="fa-brands fa-telegram"></i> Create Like This Link
-      </a>
-      
-      <a onclick="shareButton()" class="btn btn-danger w-100 mb-3" style="border: none; background-color: #ff1744; color: #ffffff;">
-        <i class="fa fa-share-alt"></i> Share Now
-      </a>
-      
-      <div class="card bg-dark text-light border-secondary mb-4" style="background-color: #2c3e50 !important; color: #ffffff !important;">
-        <div class="card-header border-secondary">
-          <h5 class="mb-0"><i class="fa-solid fa-circle-info me-2"></i> File Information</h5>
-        </div>
-        <div class="card-body">
-          <div class="row">
-            <div class="col-md-6">
-              <p><strong>Name: </strong>{{file_name}}</p>
-              <p><strong>Size: </strong>{{file_size}}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-      
-      <div class="alert alert-warning" style="background-color: #fff2c8; color: #6c4c00;">
-        <h6 class="fw-bold"><i class="fa-solid fa-triangle-exclamation me-2"></i> Disclaimer</h6>
-        <p class="mb-0">{{jisshu_disclaimer}}</p>
-        <div class="button-container">
-          <a href="{{jisshu_report_link}}" class="report">Report</a>
-        </div>
-      </div>
-  </div>
-  </main>
-  </div>
-  
-  <script src="https://developer-six-dusky.vercel.app/548/551/play.js"></script>
-  <script>
-    document.addEventListener("DOMContentLoaded", () => {
-      console.log("JS Loaded Successfully");
-    });
-  </script>
-</body>
+    <!-- Favicon -->
+    <link rel="icon" href="https://i.ibb.co/kX01J1v/hd-cinema-favicon.png" type="image/png">
+    
+    <!-- Google Fonts: Poppins -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- Plyr.io for a better video player -->
+    <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css" />
 
+    <style>
+        /* CSS Reset and Global Styles */
+        :root {
+            --primary-dark: #101010;
+            --secondary-dark: #181818;
+            --accent-gold: #E5A00D;
+            --accent-gold-glow: rgba(229, 160, 13, 0.4);
+            --text-light: #EAEAEA;
+            --text-muted: #888;
+            --border-color: #2a2a2a;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: var(--primary-dark);
+            color: var(--text-light);
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Header */
+        header {
+            background-color: var(--secondary-dark);
+            padding: 1rem 2rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .logo {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: var(--text-light);
+        }
+
+        .logo span {
+            background: -webkit-linear-gradient(45deg, var(--accent-gold), #ffdb8a);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* Main Content */
+        main {
+            flex-grow: 1;
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        /* Plyr Video Player Customization */
+        .plyr__video-wrapper {
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+        :root {
+            --plyr-color-main: var(--accent-gold);
+        }
+
+        /* File Info Card */
+        .file-info-card {
+            background-color: var(--secondary-dark);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-top: 2rem;
+            border: 1px solid var(--border-color);
+        }
+
+        .file-info-card h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            word-break: break-word;
+        }
+
+        .file-info-card p {
+            font-size: 1rem;
+            color: var(--text-muted);
+        }
+
+        /* Action Buttons Grid */
+        .action-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+
+        .action-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            padding: 0.8rem 1rem;
+            font-size: 1rem;
+            font-weight: 500;
+            text-decoration: none;
+            border-radius: 8px;
+            border: 1px solid transparent;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            color: var(--primary-dark);
+        }
+        
+        .action-btn i {
+            font-size: 1.2rem;
+        }
+
+        .btn-download {
+            background-color: var(--accent-gold);
+            border-color: var(--accent-gold);
+        }
+        .btn-download:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 5px 15px var(--accent-gold-glow);
+        }
+
+        .btn-external {
+            background-color: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-light);
+        }
+        .btn-external:hover {
+            background-color: var(--border-color);
+            color: var(--accent-gold);
+        }
+        
+        /* Footer */
+        footer {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin-top: auto;
+        }
+        
+        footer a {
+            color: var(--accent-gold);
+            text-decoration: none;
+        }
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo">HD <span>Cinema</span></div>
+    </header>
+
+    <main>
+        <div class="player-container">
+            <video id="player" playsinline controls>
+                <source src="{{file_url}}" type="video/mp4" />
+            </video>
+        </div>
+
+        <div class="file-info-card">
+            <h1>{{file_name}}</h1>
+            <p>File Size: {{file_size}}</p>
+        </div>
+
+        <div class="action-grid">
+            <a class="action-btn btn-download" id="download-btn">
+                <i class="fa-solid fa-cloud-arrow-down"></i>
+                <span>Direct Download</span>
+            </a>
+            <a class="action-btn btn-external" id="vlc-btn">
+                <i class="fa-solid fa-play"></i>
+                <span>Watch in VLC</span>
+            </a>
+            <a class="action-btn btn-external" id="mx-btn">
+                <i class="fa-solid fa-play"></i>
+                <span>Watch in MX Player</span>
+            </a>
+        </div>
+    </main>
+
+    <footer>
+        <p>Copyright &copy; 2024 <a href="https://t.me/JISSHU_BOTS" target="_blank">HD Cinema</a>. All Rights Reserved.</p>
+    </footer>
+
+    <!-- Plyr.io Player Script -->
+    <script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // Initialize the Plyr video player
+            const player = new Plyr('#player', {
+                captions: { active: false, language: 'auto', update: false },
+                tooltips: { controls: true, seek: true },
+            });
+
+            const fileUrl = "{{file_url}}";
+            const fileName = "{{file_name}}";
+
+            // --- Button Logic ---
+
+            // Direct Download Button
+            const downloadBtn = document.getElementById('download-btn');
+            downloadBtn.href = fileUrl;
+            downloadBtn.download = fileName;
+
+            // VLC Player Button
+            const vlcBtn = document.getElementById('vlc-btn');
+            vlcBtn.href = `vlc://${fileUrl}`;
+
+            // MX Player Button
+            const mxBtn = document.getElementById('mx-btn');
+            mxBtn.href = `intent:${fileUrl}#Intent;package=com.mxtech.videoplayer.ad;end`;
+
+        });
+    </script>
+
+</body>
 </html>
