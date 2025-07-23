@@ -1,9 +1,9 @@
 class jisshu_template(object):
-    JISSHU_NAME = "HD Cinema"
+    JISSHU_NAME = "CineStream"
 
     JISSHU_DISCLAIMER = (
-        "This website only provides a service to help you play your video online without downloading. "
-        "You can report files or videos that contain issues like copyright infringement, +18 content, violence, etc."
+        "This website is for demonstration purposes only. We do not host any files on our server. "
+        "All content is provided by non-affiliated third parties."
     )
 
     JISSHU_REPORT_LINK = "https://t.me/Jisshu_support"
