@@ -3,71 +3,181 @@
 <head>
     <meta charset="UTF-8" />
     <title>{{file_name}}</title>
-    <meta name="description" content="Stream high-quality videos and movies in 1080p. Experience seamless playback with multiple player options." />
+    <meta name="description" content="Stream high-quality videos and movies in 1080p with seamless playback and multiple player options." />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css?family=Poppins:400,500,600,700" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
     <style>
+        :root {
+            --primary-color: #007bff;
+            --success-color: #28a745;
+            --warning-color: #ffc107;
+            --info-color: #17a2b8;
+            --danger-color: #dc3545;
+            --header-bg: linear-gradient(90deg, #1a1a2e, #16213e);
+            --header-text: #ffffff;
+            --card-bg: #212529;
+            --card-text: #e9ecef;
+            --body-bg: #121212;
+            --body-text: #e9ecef;
+        }
+
+        .light-theme {
+            --header-bg: linear-gradient(90deg, #f8f9fa, #e9ecef);
+            --header-text: #212529;
+            --card-bg: #ffffff;
+            --card-text: #212529;
+            --body-bg: #f8f9fa;
+            --body-text: #212529;
+        }
+
         body {
             font-family: 'Poppins', sans-serif;
-        }
-        .btn {
+            background: var(--body-bg);
+            color: var(--body-text);
             transition: all 0.3s ease-in-out;
         }
+
+        header {
+            background: var(--header-bg);
+            color: var(--header-text);
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .btn {
+            transition: transform 0.2s ease, background-color 0.3s ease;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+
         .card {
             border: none;
-            border-radius: 15px;
+            border-radius: 12px;
+            background: var(--card-bg);
+            color: var(--card-text);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+            transition: transform 0.3s ease;
         }
+
+        .card:hover {
+            transform: translateY(-5px);
+        }
+
         .player-wrapper {
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
-            border-radius: 15px;
+            border-radius: 12px;
             overflow: hidden;
+            position: relative;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .plyr--video {
+            background: #000;
+        }
+
+        .plyr__control--overlaid {
+            background: var(--primary-color);
+            border-radius: 50%;
+            padding: 15px;
+        }
+
+        .loading-spinner {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 2rem;
+            color: var(--primary-color);
+            display: none;
+        }
+
+        .loading .loading-spinner {
+            display: block;
+        }
+
+        .theme-icon {
+            transition: transform 0.3s ease;
+        }
+
+        .light-theme .theme-icon.fa-sun {
+            transform: rotate(180deg);
+        }
+
+        .light-theme .theme-icon.fa-moon {
+            transform: rotate(-180deg);
         }
     </style>
 </head>
 <body class="bg-dark text-light">
     <div class="d-flex flex-column min-vh-100">
-        <header class="text-white py-3 shadow-lg" style="background: {{ jisshu_colours.header.background }}; color: {{ jisshu_colours.header.color }};">
+        <header class="text-white py-3 shadow-lg">
             <div class="container d-flex justify-content-between align-items-center">
                 <h1 class="h3 mb-0 fw-bold">{{template_ne}}</h1>
-                <button id="theme-toggle-btn" class="btn btn-light">
-                    <i class="fa-solid fa-sun"></i> 
+                <button id="theme-toggle-btn" class="btn btn-outline-light">
+                    <i class="fa-solid fa-sun theme-icon"></i>
+                    <i class="fa-solid fa-moon theme-icon d-none"></i>
                 </button>
             </div>
         </header>
-        <main class="flex-grow-1 container py-4">
-            <div class="player-wrapper mb-4">
+        <main class="flex-grow-1 container py-5">
+            <div class="player-wrapper mb-5 position-relative">
+                <div class="loading-spinner">
+                    <i class="fa-solid fa-spinner fa-spin"></i>
+                </div>
                 <video id="myVideo" class="w-100" controls crossorigin playsinline>
-                     <source src="{{file_url}}" type="video/mp4">
+                    <source src="{{file_url}}" type="video/mp4">
+                    <track kind="captions" label="English" srclang="en" src="{{file_url}}.vtt" default>
+                    Your browser does not support the video tag.
                 </video>
             </div>
-            <div class="d-grid gap-3 mb-4">
+            <div class="d-grid gap-3 mb-5">
                 <div class="row g-3">
-                    <div class="col-md-4"><a onclick="mx_player()" class="btn btn-primary w-100 py-2" style="background-color: {{ jisshu_colours.mx_player.background }}; color: {{ jisshu_colours.mx_player.color }};"><i class="fa fa-play me-2"></i><b>MX Player</b></a></div>
-                    <div class="col-md-4"><a onclick="vlc_player()" class="btn btn-success w-100 py-2" style="background-color: {{ jisshu_colours.vlc_player.background }}; color: {{ jisshu_colours.vlc_player.color }};"><i class="fa fa-play me-2"></i><b>VLC Player</b></a></div>
-                    <div class="col-md-4"><a onclick="playit_player()" class="btn btn-warning w-100 py-2" style="background-color: {{ jisshu_colours.playit_player.background }}; color: {{ jisshu_colours.playit_player.color }};"><i class="fa fa-play me-2"></i><b>Playit</b></a></div>
+                    <div class="col-md-4">
+                        <a onclick="mx_player()" class="btn btn-primary w-100 py-3" style="background-color: var(--primary-color);">
+                            <i class="fa fa-play me-2"></i><b>MX Player</b>
+                        </a>
+                    </div>
+                    <div class="col-md-4">
+                        <a onclick="vlc_player()" class="btn btn-success w-100 py-3" style="background-color: var(--success-color);">
+                            <i class="fa fa-play me-2"></i><b>VLC Player</b>
+                        </a>
+                    </div>
+                    <div class="col-md-4">
+                        <a onclick="playit_player()" class="btn btn-warning w-100 py-3" style="background-color: var(--warning-color);">
+                            <i class="fa fa-play me-2"></i><b>Playit</b>
+                        </a>
+                    </div>
                 </div>
-                <a onclick="streamDownload()" class="btn btn-info w-100 py-2" style="background-color: {{ jisshu_colours.download.background }}; color: {{ jisshu_colours.download.color }};"><i class="fa-solid fa-download me-2"></i>Download</a>
-                <a onclick="shareButton()" class="btn btn-danger w-100 py-2" style="background-color: {{ jisshu_colours.share.background }}; color: {{ jisshu_colours.share.color }};"><i class="fa fa-share-alt me-2"></i>Share Now</a>
+                <a onclick="streamDownload()" class="btn btn-info w-100 py-3" style="background-color: var(--info-color);">
+                    <i class="fa-solid fa-download me-2"></i>Download
+                </a>
+                <a onclick="shareButton()" class="btn btn-danger w-100 py-3" style="background-color: var(--danger-color);">
+                    <i class="fa fa-share-alt me-2"></i>Share Now
+                </a>
             </div>
-            <div class="card bg-dark text-light mb-4" style="background-color: {{ jisshu_colours.file_information.background }} !important; color: {{ jisshu_colours.file_information.color }} !important;">
+            <div class="card bg-dark text-light mb-5">
                 <div class="card-header"><h5 class="mb-0"><i class="fa-solid fa-circle-info me-2"></i>File Information</h5></div>
                 <div class="card-body">
                     <p><strong>Name: </strong>{{file_name}}</p>
                     <p><strong>Size: </strong>{{file_size}}</p>
                 </div>
             </div>
-            <div class="alert alert-warning" style="background-color: {{ jisshu_colours.description.background }}; color: {{ jisshu_colours.description.color }};">
+            <div class="alert alert-warning" style="background-color: var(--warning-color); color: #212529;">
                 <h6 class="fw-bold"><i class="fa-solid fa-triangle-exclamation me-2"></i>Disclaimer</h6>
                 <p class="mb-0">{{jisshu_disclaimer}}</p>
                 <a href="{{jisshu_report_link}}" class="btn btn-outline-danger btn-sm mt-2">Report</a>
             </div>
         </main>
-        <footer class="bg-dark text-white-50 text-center py-3 mt-auto">
+        <footer class="bg-dark text-white-50 text-center py-4 mt-auto">
             <div class="container">
-                <p class="mb-0">&copy; 2024 {{template_ne}}. All Rights Reserved.</p>
+                <p class="mb-0">© 2025 {{template_ne}}. All Rights Reserved.</p>
             </div>
         </footer>
     </div>
@@ -75,12 +185,48 @@
     <script>
         const player = new Plyr('#myVideo', {
             muted: false,
-            volume: 1
+            volume: 1,
+            controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'captions', 'settings', 'pip', 'airplay', 'fullscreen'],
+            settings: ['captions', 'quality', 'speed', 'loop'],
+            captions: { active: true, language: 'en', update: true },
+            autoplay: false,
+            debug: false
         });
-        document.getElementById('theme-toggle-btn').addEventListener('click', () => {
-            document.body.classList.toggle('bg-light');
-            document.body.classList.toggle('text-dark');
+
+        const video = document.getElementById('myVideo');
+        const playerWrapper = document.querySelector('.player-wrapper');
+
+        video.addEventListener('loadeddata', () => {
+            playerWrapper.classList.remove('loading');
         });
+
+        video.addEventListener('error', (e) => {
+            console.error('Video loading error:', e);
+            playerWrapper.classList.remove('loading');
+            alert('Error loading video. Please check the file URL or try another player.');
+        });
+
+        video.addEventListener('canplay', () => {
+            playerWrapper.classList.remove('loading');
+            if (!video.muted) {
+                video.volume = 1;
+            }
+        });
+
+        const themeToggleBtn = document.getElementById('theme-toggle-btn');
+        const sunIcon = themeToggleBtn.querySelector('.fa-sun');
+        const moonIcon = themeToggleBtn.querySelector('.fa-moon');
+
+        themeToggleBtn.addEventListener('click', () => {
+            document.body.classList.toggle('light-theme');
+            sunIcon.classList.toggle('d-none');
+            moonIcon.classList.toggle('d-none');
+            document.querySelectorAll('.card').forEach(card => {
+                card.style.background = document.body.classList.contains('light-theme') ? 'var(--card-bg)' : '';
+                card.style.color = document.body.classList.contains('light-theme') ? 'var(--card-text)' : '';
+            });
+        });
+
         function mx_player() { window.location.href = "intent:{{file_url}}#Intent;package=com.mxtech.videoplayer.ad;end"; }
         function vlc_player() { window.location.href = "vlc://{{file_url}}"; }
         function playit_player() { window.location.href = "playit://play/{{file_url}}"; }
@@ -91,6 +237,8 @@
                     title: '{{file_name}}',
                     url: window.location.href
                 }).catch(console.error);
+            } else {
+                alert('Share feature is not supported in this browser.');
             }
         }
     </script>
