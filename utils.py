@@ -1,4 +1,5 @@
 import logging
+import aiohttp
 from pyrogram.errors import (
     InputUserDeactivated,
     UserNotParticipant,
@@ -81,6 +82,28 @@ async def is_subscribed(bot, user_id, channel_id):
         if user.status != enums.ChatMemberStatus.BANNED:
             return True
     return False
+
+async def get_omdb_data(query):
+    """Fetches data from OMDb API."""
+    if not OMDB_API_KEY:
+        return None
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"http://www.omdbapi.com/?t={query}&apikey={OMDB_API_KEY}") as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if data.get("Response") == "True":
+                        return {
+                            "title": data.get("Title"),
+                            "year": data.get("Year"),
+                            "poster": data.get("Poster"),
+                            "genres": data.get("Genre"),
+                            "rating": data.get("imdbRating"),
+                            # Add any other fields you want
+                        }
+    except Exception as e:
+        print(f"OMDb Error: {e}")
+    return None
 
 
 async def get_poster(query, bulk=False, id=False, file=None):
