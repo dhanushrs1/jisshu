@@ -47,19 +47,20 @@ async def send_preview(client, user_id, preview_id):
     original_message_id = preview_data.get("preview_message_id")
 
     try:
+        # Determine the correct chat_id (user's PM)
+        chat_id = user_id
+        
         if original_message_id:
-            # Editing an existing preview message
-            original_message = await client.get_messages(user_id, original_message_id)
+            original_message = await client.get_messages(chat_id, original_message_id)
             if preview_data["poster"] and preview_data["poster"].startswith("http"):
                 await original_message.edit_media(media={"type": "photo", "media": preview_data["poster"], "caption": caption}, reply_markup=markup)
             else:
-                 await original_message.edit(text=caption, reply_markup=markup, disable_web_page_preview=True)
+                await original_message.edit(text=caption, reply_markup=markup, disable_web_page_preview=True)
         else:
-            # Sending a new preview message
             if preview_data["poster"] and preview_data["poster"].startswith("http"):
-                sent_msg = await client.send_photo(user_id, photo=preview_data["poster"], caption=caption, reply_markup=markup)
+                sent_msg = await client.send_photo(chat_id, photo=preview_data["poster"], caption=caption, reply_markup=markup)
             else:
-                sent_msg = await client.send_message(user_id, text=f"**PREVIEW (No/Invalid Poster)**\n\n{caption}", reply_markup=markup, disable_web_page_preview=True)
+                sent_msg = await client.send_message(chat_id, text=f"**PREVIEW (No/Invalid Poster)**\n\n{caption}", reply_markup=markup, disable_web_page_preview=True)
             PREVIEW_CACHE[preview_id]["preview_message_id"] = sent_msg.id
             
     except Exception as e:
@@ -86,7 +87,7 @@ async def generate_link_command(client, message):
 
     imdb_data = await get_omdb_data_for_link(accurate_name)
     if not imdb_data:
-        imdb_data = {} # Create an empty dict to avoid errors and allow manual entry
+        imdb_data = {}
 
     bot_username = temp.U_NAME
     start_link = f"https://t.me/{bot_username}?start=getfile-{search_query.replace(' ', '-')}"
@@ -125,8 +126,8 @@ async def edit_post_callback(client, query):
     await query.message.reply_text(prompt)
     await query.answer()
 
-# --- Message handler to catch the admin's reply ---
-@Client.on_message(filters.private & filters.user(ADMINS) & ~filters.command("createlink"))
+# --- CORRECTED Message handler to catch the admin's reply ---
+@Client.on_message(filters.private & filters.user(ADMINS) & filters.text & ~filters.command(None))
 async def handle_admin_input(client, message: Message):
     admin_id = message.from_user.id
     state = ADMIN_CONVERSATION_STATE.get(admin_id)
