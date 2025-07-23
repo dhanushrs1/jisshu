@@ -1548,7 +1548,6 @@ async def reset_group_command(client, message):
     await save_default_settings(grp_id)
     await message.reply_text("ꜱᴜᴄᴄᴇꜱꜱғᴜʟʟʏ ʀᴇꜱᴇᴛ ɢʀᴏᴜᴘ ꜱᴇᴛᴛɪɴɢꜱ...")
 
-# Add this new function at the end of the file
 @Client.on_message(filters.command("updatelinks") & filters.user(ADMINS))
 async def update_all_links(client, message):
     if REDIRECT_CHANNEL == 0:
@@ -1558,13 +1557,32 @@ async def update_all_links(client, message):
         return await message.reply("Please provide the new bot's username (without @). Usage: `/updatelinks NEW_BOT_USERNAME`")
 
     new_bot_username = message.command[1].strip()
-    sts = await message.reply("Starting link update process... This may take some time.")
+    progress_file = "update_progress.txt"
+    
+    # Check for a progress file to resume from
+    last_processed_id = 0
+    if os.path.exists(progress_file):
+        with open(progress_file, "r") as f:
+            content = f.read().strip()
+            if content.isdigit():
+                last_processed_id = int(content)
+
+    sts_text = f"Starting link update process to point to `@{new_bot_username}`."
+    if last_processed_id > 0:
+        sts_text += f"\nResuming from message ID: `{last_processed_id}`"
+        
+    sts = await message.reply(sts_text)
     
     total_messages = 0
     updated_count = 0
     
     try:
+        # The bot will iterate through messages from newest to oldest
         async for msg in client.get_chat_history(REDIRECT_CHANNEL):
+            # If we are resuming, skip messages until we reach the last processed one
+            if last_processed_id != 0 and msg.id >= last_processed_id:
+                continue
+
             total_messages += 1
             if msg.reply_markup and msg.reply_markup.inline_keyboard:
                 button = msg.reply_markup.inline_keyboard[0][0]
@@ -1589,10 +1607,17 @@ async def update_all_links(client, message):
                         except Exception as e:
                             print(f"Failed to update message {msg.id}: {e}")
             
-            if total_messages % 100 == 0:
-                await sts.edit(f"Processed {total_messages} messages... Updated {updated_count} links.")
+            # Save progress every 10 messages
+            if total_messages % 10 == 0:
+                with open(progress_file, "w") as f:
+                    f.write(str(msg.id))
+                await sts.edit(f"Processed {total_messages} messages... Updated {updated_count} links. Last processed ID: `{msg.id}`")
 
+        # Clean up progress file on successful completion
+        if os.path.exists(progress_file):
+            os.remove(progress_file)
+            
         await sts.edit(f"**Link update complete!**\n\nProcessed: `{total_messages}` messages.\nUpdated: `{updated_count}` links to point to `@{new_bot_username}`.")
 
     except Exception as e:
-        await sts.edit(f"An error occurred during update: {e}")
+        await sts.edit(f"An error occurred during update: {e}\n\nProgress has been saved. You can run the command again to resume.")
