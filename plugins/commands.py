@@ -8,7 +8,7 @@ import pytz
 from datetime import datetime as dt
 from Script import script
 from pyrogram import Client, filters, enums
-from pyrogram.errors import ChatAdminRequired
+from pyrogram.errors import ChatAdminRequired, FloodWait
 from pyrogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -1547,3 +1547,52 @@ async def reset_group_command(client, message):
     reply_markup = InlineKeyboardMarkup(btn)
     await save_default_settings(grp_id)
     await message.reply_text("ꜱᴜᴄᴄᴇꜱꜱғᴜʟʟʏ ʀᴇꜱᴇᴛ ɢʀᴏᴜᴘ ꜱᴇᴛᴛɪɴɢꜱ...")
+
+# Add this new function at the end of the file
+@Client.on_message(filters.command("updatelinks") & filters.user(ADMINS))
+async def update_all_links(client, message):
+    if REDIRECT_CHANNEL == 0:
+        return await message.reply("`REDIRECT_CHANNEL` is not set. Please configure it.")
+
+    if len(message.command) < 2:
+        return await message.reply("Please provide the new bot's username (without @). Usage: `/updatelinks NEW_BOT_USERNAME`")
+
+    new_bot_username = message.command[1].strip()
+    sts = await message.reply("Starting link update process... This may take some time.")
+    
+    total_messages = 0
+    updated_count = 0
+    
+    try:
+        async for msg in client.get_chat_history(REDIRECT_CHANNEL):
+            total_messages += 1
+            if msg.reply_markup and msg.reply_markup.inline_keyboard:
+                button = msg.reply_markup.inline_keyboard[0][0]
+                old_url = button.url
+                
+                if "?start=getfile-" in old_url:
+                    query_part = old_url.split("?start=", 1)[1]
+                    new_url = f"https://t.me/{new_bot_username}?start={query_part}"
+                    
+                    if old_url != new_url:
+                        try:
+                            await client.edit_message_reply_markup(
+                                chat_id=msg.chat.id,
+                                message_id=msg.id,
+                                reply_markup=InlineKeyboardMarkup(
+                                    [[InlineKeyboardButton(button.text, url=new_url)]]
+                                )
+                            )
+                            updated_count += 1
+                        except FloodWait as e:
+                            await asyncio.sleep(e.value)
+                        except Exception as e:
+                            print(f"Failed to update message {msg.id}: {e}")
+            
+            if total_messages % 100 == 0:
+                await sts.edit(f"Processed {total_messages} messages... Updated {updated_count} links.")
+
+        await sts.edit(f"**Link update complete!**\n\nProcessed: `{total_messages}` messages.\nUpdated: `{updated_count}` links to point to `@{new_bot_username}`.")
+
+    except Exception as e:
+        await sts.edit(f"An error occurred during update: {e}")
