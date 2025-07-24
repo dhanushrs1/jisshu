@@ -1,6 +1,5 @@
 import asyncio
 import secrets
-import aiohttp
 import re
 import os
 import json
@@ -9,8 +8,8 @@ from datetime import datetime
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from pyrogram.errors import FloodWait, MessageNotModified, ChatAdminRequired
-from info import ADMINS, REDIRECT_CHANNEL, OMDB_API_KEY
-from utils import temp
+from info import ADMINS, REDIRECT_CHANNEL, START_IMG
+from utils import temp, get_poster, list_to_str
 from database.ia_filterdb import get_search_results
 
 # Global dictionaries for state management
@@ -20,12 +19,8 @@ ACTIVE_UPDATES = {}
 
 # ==================== CREATE LINK FUNCTIONALITY ====================
 
-async def get_omdb_data_for_link(query):
-    """Fetch movie data from OMDb API with improved error handling"""
-    if not OMDB_API_KEY:
-        print("OMDB_API_KEY is not set. Cannot fetch details.")
-        return None
-    
+async def get_movie_data_for_link(query):
+    """Fetch movie data using the existing IMDb integration from utils.py"""
     try:
         # Clean the query by removing quality indicators and common keywords
         cleaned_query = re.sub(
@@ -39,43 +34,64 @@ async def get_omdb_data_for_link(query):
         # Remove file extensions
         cleaned_query = re.sub(r'\.(mkv|mp4|avi|mov|wmv)$', '', cleaned_query, flags=re.IGNORECASE)
         
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
-            async with session.get(
-                f"http://www.omdbapi.com/?t={cleaned_query}&apikey={OMDB_API_KEY}"
-            ) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    if data.get("Response") == "True":
-                        return {
-                            "title": data.get("Title", "Unknown Title"),
-                            "year": data.get("Year", "N/A"),
-                            "poster": data.get("Poster") if data.get("Poster") != "N/A" else None,
-                            "plot": data.get("Plot", "No plot available"),
-                            "rating": data.get("imdbRating", "N/A"),
-                            "genre": data.get("Genre", "N/A")
-                        }
-                    else:
-                        print(f"OMDb API returned error: {data.get('Error', 'Unknown error')}")
-                else:
-                    print(f"OMDb API request failed with status: {resp.status}")
-    except asyncio.TimeoutError:
-        print("OMDb API request timed out")
+        # Use the existing get_poster function from utils.py
+        movie_data = await get_poster(cleaned_query, bulk=False, id=False, file=query)
+        
+        if movie_data:
+            return {
+                "title": movie_data.get("title", "Unknown Title"),
+                "year": str(movie_data.get("year", "N/A")),
+                "poster": movie_data.get("poster") if movie_data.get("poster") != START_IMG else None,
+                "plot": movie_data.get("plot", "No plot available"),
+                "rating": movie_data.get("rating", "N/A"),
+                "genre": movie_data.get("genres", "N/A"),
+                "director": movie_data.get("director", "N/A"),
+                "cast": movie_data.get("cast", "N/A"),
+                "runtime": movie_data.get("runtime", "N/A"),
+                "languages": movie_data.get("languages", "N/A"),
+                "countries": movie_data.get("countries", "N/A")
+            }
+        else:
+            print(f"No IMDb data found for: {cleaned_query}")
+            return None
+            
     except Exception as e:
-        print(f"OMDb Error for /createlink: {e}")
-    
-    return None
+        print(f"IMDb Error for /createlink: {e}")
+        return None
 
-def generate_caption(title, year, plot=None, rating=None, genre=None):
-    """Generate a well-formatted caption for the post"""
+def generate_caption(title, year, plot=None, rating=None, genre=None, director=None, cast=None, runtime=None):
+    """Generate a well-formatted caption for the post with enhanced details"""
     caption = f"🎬 **{title} ({year})**\n\n"
     
     if genre and genre != "N/A":
         caption += f"🎭 **Genre:** {genre}\n"
     
-    if rating and rating != "N/A":
+    if rating and rating != "N/A" and rating != "0":
         caption += f"⭐ **IMDb Rating:** {rating}/10\n"
     
-    if plot and plot != "No plot available" and len(plot) < 200:
+    if director and director != "N/A":
+        # Limit director names to avoid too long captions
+        director_list = director.split(", ")[:2]  # Show max 2 directors
+        director_text = ", ".join(director_list)
+        if len(director_list) < len(director.split(", ")):
+            director_text += " & others"
+        caption += f"🎯 **Director:** {director_text}\n"
+    
+    if runtime and runtime != "N/A":
+        caption += f"⏱️ **Runtime:** {runtime} min\n"
+    
+    if cast and cast != "N/A":
+        # Limit cast to first 3 names to avoid long captions
+        cast_list = cast.split(", ")[:3]
+        cast_text = ", ".join(cast_list)
+        if len(cast_list) < len(cast.split(", ")):
+            cast_text += " & others"
+        caption += f"👥 **Cast:** {cast_text}\n"
+    
+    if plot and plot != "No plot available" and len(plot) > 10:
+        # Limit plot length for better readability
+        if len(plot) > 200:
+            plot = plot[:200] + "..."
         caption += f"\n📝 **Plot:** {plot}\n"
     
     caption += "\n📂 **Click the button below to get your files.**"
@@ -145,7 +161,7 @@ async def send_preview(client, user_id, preview_id):
 
 @Client.on_message(filters.command("createlink") & filters.user(ADMINS))
 async def generate_link_command(client, message):
-    """Enhanced createlink command with better error handling"""
+    """Enhanced createlink command using integrated IMDb data fetching"""
     if REDIRECT_CHANNEL == 0:
         return await message.reply("❌ `REDIRECT_CHANNEL` is not set in your configuration.")
         
@@ -167,19 +183,24 @@ async def generate_link_command(client, message):
             )
         
         accurate_name = files[0].file_name
-        await sts.edit(f"✅ **Found file:** `{accurate_name}`\n\n🎬 **Fetching movie details...**")
+        await sts.edit(f"✅ **Found file:** `{accurate_name}`\n\n🎬 **Fetching movie details from IMDb...**")
 
-        # Get movie data from OMDb
-        imdb_data = await get_omdb_data_for_link(accurate_name)
+        # Get movie data using the integrated IMDb function
+        imdb_data = await get_movie_data_for_link(accurate_name)
         if not imdb_data:
+            # Fallback data if IMDb lookup fails
             imdb_data = {
                 "title": search_query.title(),
                 "year": "N/A",
                 "poster": None,
                 "plot": "No plot available",
                 "rating": "N/A",
-                "genre": "N/A"
+                "genre": "N/A",
+                "director": "N/A",
+                "cast": "N/A",
+                "runtime": "N/A"
             }
+            await sts.edit(f"⚠️ **IMDb data not found.** Using basic information...\n\n🔗 **Generating link...**")
 
         # Generate bot link
         bot_username = temp.U_NAME
@@ -192,7 +213,10 @@ async def generate_link_command(client, message):
             imdb_data["year"], 
             imdb_data.get("plot"), 
             imdb_data.get("rating"), 
-            imdb_data.get("genre")
+            imdb_data.get("genre"),
+            imdb_data.get("director"),
+            imdb_data.get("cast"),
+            imdb_data.get("runtime")
         )
         
         PREVIEW_CACHE[preview_id] = {
@@ -202,6 +226,9 @@ async def generate_link_command(client, message):
             "plot": imdb_data.get("plot", "No plot available"),
             "rating": imdb_data.get("rating", "N/A"),
             "genre": imdb_data.get("genre", "N/A"),
+            "director": imdb_data.get("director", "N/A"),
+            "cast": imdb_data.get("cast", "N/A"),
+            "runtime": imdb_data.get("runtime", "N/A"),
             "start_link": start_link,
             "original_query": search_query,
             "caption": caption,
@@ -311,7 +338,10 @@ async def handle_admin_input(client, message: Message):
                     title, year,
                     PREVIEW_CACHE[preview_id].get("plot"),
                     PREVIEW_CACHE[preview_id].get("rating"),
-                    PREVIEW_CACHE[preview_id].get("genre")
+                    PREVIEW_CACHE[preview_id].get("genre"),
+                    PREVIEW_CACHE[preview_id].get("director"),
+                    PREVIEW_CACHE[preview_id].get("cast"),
+                    PREVIEW_CACHE[preview_id].get("runtime")
                 )
                 await message.reply("✅ Title and year updated!")
                 
@@ -870,14 +900,13 @@ async def link_help_command(client, message):
 • `/linkstats` - Show current statistics
 
 **📊 FEATURES:**
-✅ **Create Links:** OMDb integration, poster preview, editable captions
+✅ **Create Links:** IMDb integration, poster preview, editable captions
 ✅ **Update Links:** Bulk update, progress tracking, error handling
 ✅ **Safety:** Admin-only access, validation checks, resume capability
 ✅ **Management:** Real-time status, detailed reports, automatic cleanup
 
 **⚙️ CONFIGURATION REQUIRED:**
 • `REDIRECT_CHANNEL` - Channel ID where links are posted
-• `OMDB_API_KEY` - For movie information (optional)
 • `ADMINS` - List of admin user IDs
 
 **🆘 TROUBLESHOOTING:**
@@ -887,10 +916,16 @@ async def link_help_command(client, message):
 • Use `/canceledit` if stuck in edit mode
 
 **📈 EXAMPLE WORKFLOW:**
-1️⃣ `/createlink Spider Man` - Creates preview
+1️⃣ `/createlink Spider Man` - Creates preview with IMDb data
 2️⃣ Edit poster/details if needed
 3️⃣ Confirm to post to channel
 4️⃣ `/updatelinks NewBot` - Updates all links to new bot
+
+**🎬 IMDb INTEGRATION:**
+• Automatic movie data fetching using Cinemagoer library
+• Enhanced captions with director, cast, runtime, and plot
+• Fallback to basic information if IMDb data unavailable
+• No external API keys required!
 
 Need help? Contact your bot administrator.
 """
@@ -909,13 +944,19 @@ async def link_stats_command(client, message):
 
 **⚙️ CONFIGURATION:**
 • **Redirect Channel:** `{REDIRECT_CHANNEL if REDIRECT_CHANNEL != 0 else 'Not Set'}`
-• **OMDb API:** `{'✅ Configured' if OMDB_API_KEY else '❌ Not Set'}`
+• **IMDb Integration:** ✅ Cinemagoer Library Active
 • **Admin Count:** `{len(ADMINS)}` users
 
 **💾 SYSTEM STATUS:**
 • **Bot Status:** ✅ Online
 • **Memory Usage:** Normal
-• **API Status:** {'✅ Active' if OMDB_API_KEY else '⚠️ Limited'}
+• **IMDb Status:** ✅ Active (No API Key Required)
+
+**🎬 IMDb FEATURES:**
+• **Data Source:** Cinemagoer Library
+• **Information Available:** Title, Year, Plot, Rating, Genre, Director, Cast, Runtime
+• **Poster Support:** ✅ Full Resolution Posters
+• **Fallback Support:** ✅ Basic Info When IMDb Unavailable
 
 Use `/linkhelp` for command information.
 """
@@ -939,4 +980,5 @@ asyncio.create_task(start_cleanup_task())
 print("✅ Link Management System Loaded Successfully!")
 print("📝 Available Commands: /createlink, /updatelinks, /linkhelp, /linkstats")
 print("🔧 Management Commands: /cancelupdate, /updatestatus, /canceledit")
+print("🎬 IMDb Integration: Cinemagoer Library Active (No External API Required)")
 print("🔧 FIXED: Uses specific filter to only intercept admin input when in edit mode")
