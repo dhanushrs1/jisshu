@@ -3,61 +3,42 @@ import secrets
 import re
 import os
 import json
-import time
 from pyrogram import Client, filters, ContinuePropagation
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
-from pyrogram.errors import FloodWait
 from info import ADMINS, REDIRECT_CHANNEL
-from utils import temp, list_to_str
+from utils import list_to_str
 from database.ia_filterdb import get_search_results
 from plugins.pm_filter import auto_filter
 from imdb import Cinemagoer
 
 # --- Configuration ---
-# Your website's redirector URL. Make sure it ends with a forward slash.
 REDIRECT_URL = "https://files.hdcinema.fun/"
+LINK_DB_FILE = "permanent_links.json"
+LINK_ID_PREFIX = "link_" # This prefix is crucial to avoid conflicts
 
 # --- Globals ---
 PREVIEW_CACHE = {}
 imdb = Cinemagoer()
-LINK_DB_FILE = "permanent_links.json"
 
 # --- Link Database Functions ---
 def load_link_db():
-    """Loads the link database from the JSON file."""
-    if not os.path.exists(LINK_DB_FILE):
-        return {}
+    if not os.path.exists(LINK_DB_FILE): return {}
     try:
-        with open(LINK_DB_FILE, "r") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, IOError):
-        return {}
+        with open(LINK_DB_FILE, "r") as f: return json.load(f)
+    except: return {}
 
 def save_link_db(db_data):
-    """Saves the link database to the JSON file."""
     with open(LINK_DB_FILE, "w") as f:
         json.dump(db_data, f, indent=4)
 
 # ==================== IMDb & Caption Logic ====================
-
 async def get_movie_data_for_link(query):
-    """
-    Fetches movie data using cinemagoer, prioritizing text info.
-    """
     try:
-        cleaned_query = re.sub(
-            r'\b(1080p|720p|480p|4k|web-dl|bluray|hdrip|webrip)\b|\.|_',
-            '', query, flags=re.IGNORECASE
-        ).strip()
-        cleaned_query = re.sub(r'[\(\[]?\d{4}[\)\]]?', '', cleaned_query).strip()
-
+        cleaned_query = re.sub(r'\b(1080p|720p|480p|4k|web-dl|bluray|hdrip|webrip)\b|\.|_', '', query, flags=re.IGNORECASE).strip()
         movies = imdb.search_movie(cleaned_query)
-        if not movies:
-            return None
-
-        movie_id = movies[0].movieID
-        movie = imdb.get_movie(movie_id)
+        if not movies: return None
         
+        movie = imdb.get_movie(movies[0].movieID)
         return {
             "title": movie.get("title", "N/A"),
             "year": str(movie.get("year", "N/A")),
@@ -71,15 +52,19 @@ async def get_movie_data_for_link(query):
         print(f"IMDb Error in Link.py: {e}")
         return None
 
-def generate_caption(title="N/A", year="N/A", plot="N/A", rating="N/A", genre="N/A", runtime="N/A", **kwargs):
-    """Generates a well-formatted caption."""
+def generate_caption(**kwargs):
+    title = kwargs.get("title", "N/A")
+    year = kwargs.get("year", "N/A")
+    genre = kwargs.get("genre", "N/A")
+    rating = kwargs.get("rating", "N/A")
+    runtime = kwargs.get("runtime", "N/A")
+    plot = kwargs.get("plot", "N/A")
+
     caption = f"🎬 **{title} ({year})**\n\n"
-    if genre and genre != "N/A": caption += f"🎭 **Genre:** {genre}\n"
-    if rating and rating != "N/A" and rating != "0": caption += f"⭐ **IMDb Rating:** {rating}/10\n"
-    if runtime and runtime != "N/A": caption += f"⏱️ **Runtime:** {runtime}\n"
-    if plot and plot != "No plot available" and len(plot) > 10:
-        plot_text = plot[:200] + "..." if len(plot) > 200 else plot
-        caption += f"\n📝 **Plot:** {plot_text}\n"
+    if genre != "N/A": caption += f"🎭 **Genre:** {genre}\n"
+    if rating != "N/A": caption += f"⭐ **IMDb Rating:** {rating}/10\n"
+    if runtime != "N/A": caption += f"⏱️ **Runtime:** {runtime}\n"
+    if plot != "N/A": caption += f"\n📝 **Plot:** {plot[:200]}{'...' if len(plot) > 200 else ''}\n"
     caption += "\n📂 **Click the button below to get your files.**"
     return caption
 
@@ -97,17 +82,20 @@ async def generate_link_command(client, message):
     if not files:
         return await sts.edit(f"❌ **No files found for:** `{search_query}` in the bot's database.")
 
-    imdb_data = await get_movie_data_for_link(search_query)
-    if not imdb_data:
-        imdb_data = {"title": search_query.title(), "year": "N/A", "poster": None}
-        await sts.edit("⚠️ **IMDb data not found.** Using basic information for the preview.")
+    imdb_data = await get_movie_data_for_link(search_query) or {}
     
-    link_id = secrets.token_hex(4)
+    unique_id = secrets.token_hex(4)
+    link_id_with_prefix = f"{LINK_ID_PREFIX}{unique_id}"
+    
     link_db = load_link_db()
-    link_db[link_id] = search_query
+    link_db[link_id_with_prefix] = search_query
     save_link_db(link_db)
     
-    permanent_link = f"{REDIRECT_URL}?id={link_id}"
+    permanent_link = f"{REDIRECT_URL}?id={link_id_with_prefix}"
+    
+    # Use search_query as fallback title if IMDb fails
+    imdb_data.setdefault("title", search_query.title())
+    imdb_data.setdefault("year", "N/A")
     caption = generate_caption(**imdb_data)
     
     preview_id = secrets.token_hex(8)
@@ -122,7 +110,6 @@ async def generate_link_command(client, message):
     await send_preview(client, message.from_user.id, preview_id)
 
 async def send_preview(client, user_id, preview_id):
-    """Sends the preview message to the admin for confirmation."""
     preview_data = PREVIEW_CACHE.get(preview_id)
     if not preview_data: return
 
@@ -152,7 +139,8 @@ async def confirm_cancel_handler(client, query):
         return await query.message.edit_text("This request has expired or is invalid.")
 
     if action == "confirm_post":
-        await query.message.edit_caption("✅ **Confirmed!** Posting to channel...") if query.message.photo else await query.message.edit_text("✅ **Confirmed!** Posting to channel...")
+        is_photo = bool(query.message.photo)
+        await (query.message.edit_caption if is_photo else query.message.edit_text)("✅ **Confirmed!** Posting to channel...")
         
         final_markup = InlineKeyboardMarkup([[InlineKeyboardButton("✅ Click Here to Get Files ✅", url=preview_data["permanent_link"])]])
         
@@ -162,10 +150,9 @@ async def confirm_cancel_handler(client, query):
             else:
                 sent_message = await client.send_message(REDIRECT_CHANNEL, text=preview_data["caption"], reply_markup=final_markup, disable_web_page_preview=True)
             
-            await query.message.edit_caption(f"✅ **Post created successfully!**\n\n📱 **Channel Link:** {sent_message.link}") if query.message.photo else await query.message.edit_text(f"✅ **Post created successfully!**\n\n📱 **Channel Link:** {sent_message.link}")
-
+            await (query.message.edit_caption if is_photo else query.message.edit_text)(f"✅ **Post created successfully!**\n\n📱 **Channel Link:** {sent_message.link}")
         except Exception as e:
-            await query.message.edit_caption(f"❌ **Error posting to channel:** `{e}`") if query.message.photo else await query.message.edit_text(f"❌ **Error posting to channel:** `{e}`")
+            await (query.message.edit_caption if is_photo else query.message.edit_text)(f"❌ **Error posting to channel:** `{e}`")
         finally:
             if preview_id in PREVIEW_CACHE: del PREVIEW_CACHE[preview_id]
 
@@ -178,24 +165,23 @@ async def confirm_cancel_handler(client, query):
 
 @Client.on_message(filters.command("start"), group=1)
 async def permanent_link_handler(client, message):
-    if len(message.command) > 1:
+    if len(message.command) > 1 and message.command[1].startswith(LINK_ID_PREFIX):
         link_id = message.command[1]
-        
-        # Check if the link_id exists in our database
         link_db = load_link_db()
         search_query = link_db.get(link_id)
         
         if search_query:
-            # If it exists, create a "mock" message object with the real search query
-            # and pass it to the auto_filter function.
+            # Create a mock message and pass it to the auto_filter
             mock_message = message
             mock_message.text = search_query
-            
-            # This will trigger the file sending logic in pm_filter.py
-            await auto_filter(client, mock_message)
-            return # Stop further processing of this command
+            try:
+                await auto_filter(client, mock_message)
+            except Exception as e:
+                print(f"Error in auto_filter from link handler: {e}")
+                await message.reply("An error occurred while fetching your file. Please try again later.")
+            return # Stop processing to prevent other handlers from running
 
-    # If it's not a permanent link, let other start command handlers run.
+    # If it wasn't our specific link format, let other handlers process it.
     raise ContinuePropagation
 
-print("✅ Permanent Link System and IMDb Fix Loaded Successfully!")
+print("✅ Permanent Link System (Link.py) loaded successfully!")
