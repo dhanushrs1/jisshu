@@ -7,7 +7,7 @@ import time
 from pyrogram import Client, filters, ContinuePropagation
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from info import ADMINS, REDIRECT_CHANNEL
-from utils import list_to_str, get_poster # Re-using the proven get_poster function
+from utils import list_to_str, get_poster # We will use the PROVEN get_poster function from utils
 from database.ia_filterdb import get_search_results
 from plugins.pm_filter import auto_filter
 
@@ -33,10 +33,10 @@ def save_link_db(db_data):
 
 # ==================== Caption Logic ====================
 def generate_caption(**kwargs):
-    """Generates a well-formatted caption without the plot."""
+    """Generates a well-formatted caption without the plot, using the correct keys."""
     title = kwargs.get("title", "N/A")
     year = kwargs.get("year", "N/A")
-    genre = kwargs.get("genres", "N/A") # Corrected key
+    genre = kwargs.get("genres", "N/A") # Correct key is 'genres' from get_poster
     rating = kwargs.get("rating", "N/A")
     runtime = kwargs.get("runtime", "N/A")
 
@@ -61,7 +61,7 @@ async def generate_link_command(client, message):
     if not files:
         return await sts.edit(f"❌ **No files found for:** `{search_query}` in the bot's database.")
 
-    # Using the same robust get_poster function from utils.py
+    # Use the proven get_poster function for reliable IMDb data
     imdb_data = await get_poster(search_query) or {}
     
     unique_id = secrets.token_hex(4)
@@ -73,7 +73,6 @@ async def generate_link_command(client, message):
     
     permanent_link = f"{REDIRECT_URL}?id={link_id_with_prefix}"
     
-    # Set default values if IMDb fetch fails
     imdb_data.setdefault("title", search_query.title())
     imdb_data.setdefault("year", "N/A")
     
@@ -92,7 +91,7 @@ async def generate_link_command(client, message):
     await send_preview(client, message.from_user.id, preview_id)
 
 async def send_preview(client, user_id, preview_id):
-    """Sends or updates the preview message to the admin for confirmation."""
+    """Sends or updates the preview message with full admin edit buttons."""
     preview_data = PREVIEW_CACHE.get(preview_id)
     if not preview_data: return
 
@@ -109,20 +108,24 @@ async def send_preview(client, user_id, preview_id):
         ]
     ])
 
-    try:
-        if "preview_message_id" in preview_data:
+    # Clean up old preview message if it exists
+    if "preview_message_id" in preview_data:
+        try:
             await client.delete_messages(user_id, preview_data["preview_message_id"])
-    except: pass
+        except: pass
 
     try:
-        if preview_data.get("poster"):
-            sent_message = await client.send_photo(user_id, photo=preview_data["poster"], caption=caption, reply_markup=markup)
+        # Check if poster is a valid string before sending
+        poster = preview_data.get("poster")
+        if poster and isinstance(poster, str) and poster.startswith("http"):
+            sent_message = await client.send_photo(user_id, photo=poster, caption=caption, reply_markup=markup)
         else:
             sent_message = await client.send_message(user_id, text=f"**🔍 PREVIEW (No Poster Found)**\n\n{caption}", reply_markup=markup, disable_web_page_preview=True)
         
         preview_data["preview_message_id"] = sent_message.id
     except Exception as e:
-        sent_message = await client.send_message(user_id, f"**Could not send preview:** `{e}`\n\n{caption}", reply_markup=markup, disable_web_page_preview=True)
+        # Handle the "Invalid file" error gracefully
+        sent_message = await client.send_message(user_id, f"**Could not send preview (Invalid Poster URL):** `{e}`\n\n{caption}", reply_markup=markup, disable_web_page_preview=True)
         preview_data["preview_message_id"] = sent_message.id
 
 
@@ -146,8 +149,9 @@ async def confirm_cancel_handler(client, query):
         final_markup = InlineKeyboardMarkup([[InlineKeyboardButton("✅ Click Here to Get Files ✅", url=preview_data["permanent_link"])]])
         
         try:
-            if preview_data.get("poster"):
-                sent_message = await client.send_photo(REDIRECT_CHANNEL, photo=preview_data["poster"], caption=preview_data["caption"], reply_markup=final_markup)
+            poster = preview_data.get("poster")
+            if poster and isinstance(poster, str) and poster.startswith("http"):
+                sent_message = await client.send_photo(REDIRECT_CHANNEL, photo=poster, caption=preview_data["caption"], reply_markup=final_markup)
             else:
                 sent_message = await client.send_message(REDIRECT_CHANNEL, text=preview_data["caption"], reply_markup=final_markup, disable_web_page_preview=True)
             
@@ -243,12 +247,14 @@ async def permanent_link_handler(client, message):
             mock_message = message
             mock_message.text = search_query
             try:
+                # Use a try-except block to handle any errors during auto_filter
                 await auto_filter(client, mock_message)
             except Exception as e:
                 print(f"Error in auto_filter from link handler: {e}")
-                await message.reply("An error occurred while fetching your file.")
-            return
+                await message.reply("An error occurred while fetching your file. Please try again later.")
+            return # Stop processing to prevent other handlers from running
 
+    # If it wasn't our specific link format, let other start command handlers process it.
     raise ContinuePropagation
 
 print("✅ Permanent Link System with Full Admin Customization Loaded Successfully!")
