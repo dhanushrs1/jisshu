@@ -7,7 +7,7 @@ import time
 from pyrogram import Client, filters, ContinuePropagation
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from info import ADMINS, REDIRECT_CHANNEL
-from utils import list_to_str, get_poster # We will use the PROVEN get_poster function from utils
+from utils import list_to_str, get_poster # Using the proven get_poster function
 from database.ia_filterdb import get_search_results
 from plugins.pm_filter import auto_filter
 
@@ -36,7 +36,7 @@ def generate_caption(**kwargs):
     """Generates a well-formatted caption without the plot, using the correct keys."""
     title = kwargs.get("title", "N/A")
     year = kwargs.get("year", "N/A")
-    genre = kwargs.get("genres", "N/A") # Correct key is 'genres' from get_poster
+    genre = kwargs.get("genres", "N/A") # The key from get_poster is 'genres'
     rating = kwargs.get("rating", "N/A")
     runtime = kwargs.get("runtime", "N/A")
 
@@ -46,29 +46,6 @@ def generate_caption(**kwargs):
     if runtime and runtime != "N/A": caption += f"⏱️ **Runtime:** {runtime}\n"
     caption += "\n📂 **Click the button below to get your files.**"
     return caption
-
-def is_valid_poster_url(url):
-    """Check if the poster URL is valid for Telegram"""
-    if not url or not isinstance(url, str):
-        return False
-    
-    # Check if it starts with http/https
-    if not url.startswith(('http://', 'https://')):
-        return False
-    
-    # Check for common image extensions or known image hosting domains
-    image_extensions = ('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp')
-    image_domains = ['imdb.com', 'amazon.com', 'tmdb.org', 'imgur.com', 'cloudinary.com']
-    
-    # Check for file extension
-    if any(url.lower().endswith(ext) for ext in image_extensions):
-        return True
-    
-    # Check for known image hosting domains
-    if any(domain in url.lower() for domain in image_domains):
-        return True
-    
-    return False
 
 # ==================== /createlink and Preview Workflow ====================
 
@@ -85,18 +62,7 @@ async def generate_link_command(client, message):
         return await sts.edit(f"❌ **No files found for:** `{search_query}` in the bot's database.")
 
     # Use the proven get_poster function for reliable IMDb data
-    try:
-        imdb_data = await get_poster(search_query) or {}
-    except Exception as e:
-        print(f"Error getting poster data: {e}")
-        imdb_data = {
-            "title": search_query.title(),
-            "year": "N/A",
-            "genres": "N/A",
-            "rating": "N/A",
-            "runtime": "N/A",
-            "poster": None
-        }
+    imdb_data = await get_poster(search_query) or {}
     
     unique_id = secrets.token_hex(4)
     link_id_with_prefix = f"{LINK_ID_PREFIX}{unique_id}"
@@ -107,26 +73,15 @@ async def generate_link_command(client, message):
     
     permanent_link = f"{REDIRECT_URL}?id={link_id_with_prefix}"
     
-    # Ensure required fields have default values
+    # Set default values if IMDb fetch fails, which is now less likely
     imdb_data.setdefault("title", search_query.title())
     imdb_data.setdefault("year", "N/A")
-    imdb_data.setdefault("genres", "N/A")
-    imdb_data.setdefault("rating", "N/A")
-    imdb_data.setdefault("runtime", "N/A")
-    
-    # Validate poster URL
-    poster_url = imdb_data.get("poster")
-    if not is_valid_poster_url(poster_url):
-        poster_url = None
-        print(f"Invalid poster URL detected: {imdb_data.get('poster')}")
-    
-    imdb_data["poster"] = poster_url
     
     caption = generate_caption(**imdb_data)
     
     preview_id = secrets.token_hex(8)
     PREVIEW_CACHE[preview_id] = {
-        "poster": poster_url,
+        "poster": imdb_data.get("poster"),
         "caption": caption,
         "permanent_link": permanent_link,
         "admin_id": message.from_user.id,
@@ -161,52 +116,16 @@ async def send_preview(client, user_id, preview_id):
         except: pass
 
     try:
-        # Check if poster is a valid URL
         poster = preview_data.get("poster")
-        if poster and is_valid_poster_url(poster):
-            try:
-                sent_message = await client.send_photo(
-                    user_id, 
-                    photo=poster, 
-                    caption=caption, 
-                    reply_markup=markup
-                )
-                preview_data["preview_message_id"] = sent_message.id
-            except Exception as poster_error:
-                print(f"Failed to send with poster {poster}: {poster_error}")
-                # Fallback to text message without poster
-                sent_message = await client.send_message(
-                    user_id, 
-                    text=f"**🔍 PREVIEW (Poster Error: {str(poster_error)[:50]}...)**\n\n{caption}", 
-                    reply_markup=markup, 
-                    disable_web_page_preview=True
-                )
-                preview_data["preview_message_id"] = sent_message.id
-                # Clear the invalid poster
-                preview_data["poster"] = None
+        if poster and isinstance(poster, str) and poster.startswith("http"):
+            sent_message = await client.send_photo(user_id, photo=poster, caption=caption, reply_markup=markup)
         else:
-            # Send as text message when no valid poster
-            sent_message = await client.send_message(
-                user_id, 
-                text=f"**🔍 PREVIEW (No Valid Poster)**\n\n{caption}", 
-                reply_markup=markup, 
-                disable_web_page_preview=True
-            )
-            preview_data["preview_message_id"] = sent_message.id
-            
+            sent_message = await client.send_message(user_id, text=f"**🔍 PREVIEW (No Poster Found)**\n\n{caption}", reply_markup=markup, disable_web_page_preview=True)
+        
+        preview_data["preview_message_id"] = sent_message.id
     except Exception as e:
-        # Ultimate fallback
-        try:
-            sent_message = await client.send_message(
-                user_id, 
-                f"**🔍 PREVIEW (Error: {str(e)[:50]}...)**\n\n{caption}", 
-                reply_markup=markup, 
-                disable_web_page_preview=True
-            )
-            preview_data["preview_message_id"] = sent_message.id
-        except Exception as final_error:
-            print(f"Critical error in send_preview: {final_error}")
-
+        sent_message = await client.send_message(user_id, f"**Could not send preview (Invalid Poster URL):** `{e}`\n\n{caption}", reply_markup=markup, disable_web_page_preview=True)
+        preview_data["preview_message_id"] = sent_message.id
 
 @Client.on_callback_query(filters.regex(r"^(confirm_post|cancel_post)#"))
 async def confirm_cancel_handler(client, query):
@@ -229,30 +148,10 @@ async def confirm_cancel_handler(client, query):
         
         try:
             poster = preview_data.get("poster")
-            if poster and is_valid_poster_url(poster):
-                try:
-                    sent_message = await client.send_photo(
-                        REDIRECT_CHANNEL, 
-                        photo=poster, 
-                        caption=preview_data["caption"], 
-                        reply_markup=final_markup
-                    )
-                except Exception as poster_error:
-                    print(f"Failed to post with poster: {poster_error}")
-                    # Fallback to text message
-                    sent_message = await client.send_message(
-                        REDIRECT_CHANNEL, 
-                        text=preview_data["caption"], 
-                        reply_markup=final_markup, 
-                        disable_web_page_preview=True
-                    )
+            if poster and isinstance(poster, str) and poster.startswith("http"):
+                sent_message = await client.send_photo(REDIRECT_CHANNEL, photo=poster, caption=preview_data["caption"], reply_markup=final_markup)
             else:
-                sent_message = await client.send_message(
-                    REDIRECT_CHANNEL, 
-                    text=preview_data["caption"], 
-                    reply_markup=final_markup, 
-                    disable_web_page_preview=True
-                )
+                sent_message = await client.send_message(REDIRECT_CHANNEL, text=preview_data["caption"], reply_markup=final_markup, disable_web_page_preview=True)
             
             await edit_func(f"✅ **Post created successfully!**\n\n📱 **Channel Link:** {sent_message.link}")
         except Exception as e:
@@ -280,7 +179,7 @@ async def edit_post_callback(client, query):
     ADMIN_CONVERSATION_STATE[query.from_user.id] = {"type": edit_type, "preview_id": preview_id}
     
     prompts = {
-        "poster": "🖼️ **Send the new poster URL now.**\n\n**Note:** Make sure the URL is a direct link to an image (jpg, png, etc.) or from a reliable image hosting service.",
+        "poster": "🖼️ **Send the new poster URL now.**",
         "details": "✏️ **Send the new details in this format:**\n\n`Title | Year | Rating | Genre | Runtime`\n\n**Example:** `The Avengers | 2012 | 8.0 | Action, Sci-Fi | 143 min`",
         "caption": "📝 **Send the new full caption text.**"
     }
@@ -305,60 +204,33 @@ async def handle_admin_input(client, message: Message):
     preview_data = PREVIEW_CACHE[preview_id]
     
     if edit_type == "poster":
-        poster_url = message.text.strip()
-        if is_valid_poster_url(poster_url):
-            preview_data["poster"] = poster_url
-            preview_data["details"]["poster"] = poster_url
-            await message.reply("✅ **Poster updated successfully!**")
+        if message.text.startswith(("http://", "https://")):
+            preview_data["poster"] = message.text.strip()
+            await message.reply("✅ Poster updated!")
         else:
-            await message.reply("❌ **Invalid poster URL.** Please send a valid image URL that:\n• Starts with http:// or https://\n• Points to an image file (.jpg, .png, etc.)\n• Is from a reliable hosting service")
-            return
+            await message.reply("❌ Invalid URL. Please send a valid image link.")
     
     elif edit_type == "caption":
         preview_data["caption"] = message.text.strip()
-        await message.reply("✅ **Caption updated successfully!**")
+        await message.reply("✅ Caption updated!")
         
     elif edit_type == "details":
         try:
             parts = [p.strip() for p in message.text.split("|")]
             if len(parts) != 5:
-                await message.reply("❌ **Invalid format.** Please provide exactly 5 fields separated by '|':\n\n`Title | Year | Rating | Genre | Runtime`")
+                await message.reply("❌ Invalid format. Please provide all 5 fields separated by '|'.")
                 return
 
             details = preview_data["details"]
             details["title"], details["year"], details["rating"], details["genres"], details["runtime"] = parts
-            
-            # Validate year format
-            if details["year"] != "N/A" and not re.match(r'^\d{4}, details["year"]):
-                await message.reply("⚠️ **Warning:** Year should be a 4-digit number (e.g., 2023) or 'N/A'")
-            
-            # Validate rating format
-            if details["rating"] != "N/A":
-                try:
-                    rating_float = float(details["rating"])
-                    if rating_float < 0 or rating_float > 10:
-                        await message.reply("⚠️ **Warning:** Rating should be between 0-10 or 'N/A'")
-                except ValueError:
-                    await message.reply("⚠️ **Warning:** Rating should be a number (e.g., 8.5) or 'N/A'")
-            
             preview_data["caption"] = generate_caption(**details)
-            await message.reply("✅ **Movie details and caption updated successfully!**")
+            await message.reply("✅ Movie details and caption updated!")
         except Exception as e:
-            await message.reply(f"❌ **Error updating details:** `{str(e)}`")
-            return
+            await message.reply(f"❌ Error updating details: `{e}`")
 
     del ADMIN_CONVERSATION_STATE[admin_id]
-    
-    # Send a status message before generating preview
-    status_msg = await message.reply("🔄 **Generating updated preview...**")
+    await message.reply("🔄 **Generating updated preview...**")
     await send_preview(client, admin_id, preview_id)
-    
-    # Delete the status message after a short delay
-    try:
-        await asyncio.sleep(1)
-        await status_msg.delete()
-    except:
-        pass
 
 # ==================== /start Command Handler for Permanent Links ====================
 
@@ -370,64 +242,17 @@ async def permanent_link_handler(client, message):
         search_query = link_db.get(link_id)
         
         if search_query:
-            # Create a loading message
-            loading_msg = await message.reply("🔍 **Loading your files...**")
-            
             mock_message = message
             mock_message.text = search_query
             try:
-                # Use a try-except block to handle any errors during auto_filter
                 await auto_filter(client, mock_message)
-                # Delete loading message after successful filter
-                try:
-                    await loading_msg.delete()
-                except:
-                    pass
             except Exception as e:
                 print(f"Error in auto_filter from link handler: {e}")
-                await loading_msg.edit("❌ **An error occurred while fetching your files.** Please try again later or contact support.")
-            return # Stop processing to prevent other handlers from running
-        else:
-            await message.reply("❌ **Invalid or expired link.** Please get a new link from the channel.")
+                await message.reply("An error occurred while fetching your file.")
+            # Stop other start handlers from executing for this specific case
             return
 
-    # If it wasn't our specific link format, let other start command handlers process it.
+    # If it's not our specific link, let other handlers run.
     raise ContinuePropagation
 
-# ==================== Additional Admin Commands ====================
-
-@Client.on_message(filters.command("linkstats") & filters.user(ADMINS))
-async def link_statistics(client, message):
-    """Show statistics about permanent links"""
-    link_db = load_link_db()
-    total_links = len(link_db)
-    
-    if total_links == 0:
-        return await message.reply("📊 **Link Statistics**\n\n❌ No permanent links created yet.")
-    
-    # Show recent links (last 10)
-    recent_links = list(link_db.items())[-10:]
-    
-    stats_text = f"📊 **Link Statistics**\n\n"
-    stats_text += f"🔗 **Total Links Created:** {total_links}\n\n"
-    stats_text += f"🕒 **Recent Links (Last 10):**\n"
-    
-    for i, (link_id, search_query) in enumerate(recent_links, 1):
-        stats_text += f"{i}. `{search_query[:30]}{'...' if len(search_query) > 30 else ''}`\n"
-    
-    await message.reply(stats_text)
-
-@Client.on_message(filters.command("clearcache") & filters.user(ADMINS))
-async def clear_preview_cache(client, message):
-    """Clear the preview cache"""
-    global PREVIEW_CACHE, ADMIN_CONVERSATION_STATE
-    
-    cleared_previews = len(PREVIEW_CACHE)
-    cleared_states = len(ADMIN_CONVERSATION_STATE)
-    
-    PREVIEW_CACHE.clear()
-    ADMIN_CONVERSATION_STATE.clear()
-    
-    await message.reply(f"🧹 **Cache Cleared**\n\n✅ Cleared {cleared_previews} preview(s) and {cleared_states} conversation state(s).")
-
-print("✅ Enhanced Permanent Link System with Improved Poster Handling Loaded Successfully!")
+print("✅ Final Link System with Full Admin Customization Loaded Successfully!")
