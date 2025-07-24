@@ -18,6 +18,8 @@ from shortzy import Shortzy
 from datetime import datetime
 from typing import Any
 from database.users_chats_db import db
+import requests
+from urllib.parse import urlparse
 
 
 logger = logging.getLogger(__name__)
@@ -83,6 +85,73 @@ async def is_subscribed(bot, user_id, channel_id):
     return False
 
 
+def is_valid_image_url(url):
+    """Check if URL is valid and points to an image"""
+    if not url or not isinstance(url, str):
+        return False
+    
+    # Check if it's a proper URL
+    try:
+        parsed = urlparse(url)
+        if not all([parsed.scheme, parsed.netloc]):
+            return False
+    except:
+        return False
+    
+    # Check if URL starts with http/https
+    if not url.startswith(('http://', 'https://')):
+        return False
+    
+    # Check if it's likely an image URL
+    image_extensions = ('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp')
+    if any(url.lower().endswith(ext) for ext in image_extensions):
+        return True
+    
+    # For IMDb URLs, they often don't have extensions but are still valid
+    if 'imdb.com' in url.lower() or 'amazon.com' in url.lower():
+        return True
+    
+    return False
+
+
+async def validate_image_url(url):
+    """Validate if the image URL is accessible"""
+    if not is_valid_image_url(url):
+        return False
+    
+    try:
+        # Make a quick HEAD request to check if URL is accessible
+        response = requests.head(url, timeout=5, allow_redirects=True)
+        if response.status_code == 200:
+            content_type = response.headers.get('content-type', '').lower()
+            if 'image' in content_type:
+                return True
+    except:
+        pass
+    
+    return False
+
+
+def get_backup_poster_url(title, year=None):
+    """Generate a backup poster URL using external services"""
+    try:
+        # Use OMDb API or similar service as backup
+        # This is a placeholder - you can implement your preferred backup service
+        search_term = title.replace(' ', '+')
+        if year:
+            search_term += f"+{year}"
+        
+        # Example backup URLs (you may need to implement actual API calls)
+        backup_urls = [
+            f"https://image.tmdb.org/t/p/w500/{search_term}.jpg",  # TMDB placeholder
+            START_IMG  # Fallback to default image
+        ]
+        
+        return backup_urls[1]  # Return START_IMG for now
+    except:
+        return START_IMG
+
+
 async def get_poster(query, bulk=False, id=False, file=None):
     if not id:
         query = (query.strip()).lower()
@@ -97,32 +166,78 @@ async def get_poster(query, bulk=False, id=False, file=None):
                 year = list_to_str(year[:1])
         else:
             year = None
-        movieid = imdb.search_movie(title.lower(), results=10)
+        
+        try:
+            movieid = imdb.search_movie(title.lower(), results=10)
+        except Exception as e:
+            logger.error(f"IMDb search error for '{title}': {e}")
+            # Return basic info with backup poster
+            return {
+                "title": title.title(),
+                "year": year or "N/A",
+                "genres": "N/A",
+                "rating": "N/A",
+                "runtime": "N/A",
+                "poster": get_backup_poster_url(title, year),
+                "plot": "N/A",
+                "url": "N/A"
+            }
+        
         if not movieid:
-            return None
+            logger.warning(f"No IMDb results found for '{title}'")
+            return {
+                "title": title.title(),
+                "year": year or "N/A",
+                "genres": "N/A",
+                "rating": "N/A",
+                "runtime": "N/A",
+                "poster": get_backup_poster_url(title, year),
+                "plot": "N/A",
+                "url": "N/A"
+            }
+        
         if year:
             filtered = list(filter(lambda k: str(k.get("year")) == str(year), movieid))
             if not filtered:
                 filtered = movieid
         else:
             filtered = movieid
+        
         movieid = list(
             filter(lambda k: k.get("kind") in ["movie", "tv series"], filtered)
         )
         if not movieid:
             movieid = filtered
+        
         if bulk:
             return movieid
+        
         movieid = movieid[0].movieID
     else:
         movieid = query
-    movie = imdb.get_movie(movieid)
+    
+    try:
+        movie = imdb.get_movie(movieid)
+    except Exception as e:
+        logger.error(f"Error fetching movie details for ID {movieid}: {e}")
+        return {
+            "title": "Unknown",
+            "year": "N/A",
+            "genres": "N/A",
+            "rating": "N/A",
+            "runtime": "N/A",
+            "poster": START_IMG,
+            "plot": "N/A",
+            "url": "N/A"
+        }
+    
     if movie.get("original air date"):
         date = movie["original air date"]
     elif movie.get("year"):
         date = movie.get("year")
     else:
         date = "N/A"
+    
     plot = ""
     if not LONG_IMDB_DESCRIPTION:
         plot = movie.get("plot")
@@ -130,8 +245,39 @@ async def get_poster(query, bulk=False, id=False, file=None):
             plot = plot[0]
     else:
         plot = movie.get("plot outline")
+    
     if plot and len(plot) > 800:
         plot = plot[0:800] + "..."
+    
+    # Handle poster URL with validation
+    poster_url = None
+    
+    # Try to get the full-size cover URL first
+    if movie.get("full-size cover url"):
+        poster_candidate = movie.get("full-size cover url")
+        if is_valid_image_url(poster_candidate):
+            poster_url = poster_candidate
+    
+    # If no full-size poster, try cover url
+    if not poster_url and movie.get("cover url"):
+        poster_candidate = movie.get("cover url")
+        if is_valid_image_url(poster_candidate):
+            poster_url = poster_candidate
+    
+    # If still no valid poster, use backup
+    if not poster_url:
+        movie_title = movie.get("title", "Unknown")
+        movie_year = movie.get("year")
+        poster_url = get_backup_poster_url(movie_title, movie_year)
+        logger.warning(f"No valid poster found for '{movie_title}', using backup")
+    
+    # Validate the final poster URL
+    try:
+        # Quick validation without making HTTP request for now
+        if not is_valid_image_url(poster_url):
+            poster_url = START_IMG
+    except:
+        poster_url = START_IMG
 
     return {
         "title": movie.get("title"),
@@ -141,7 +287,7 @@ async def get_poster(query, bulk=False, id=False, file=None):
         "box_office": movie.get("box office"),
         "localized_title": movie.get("localized title"),
         "kind": movie.get("kind"),
-        "imdb_id": f"tt{movie.get('imdbID')}",
+        "imdb_id": f"tt{movie.get('imdbID')}" if movie.get('imdbID') else "N/A",
         "cast": list_to_str(movie.get("cast")),
         "runtime": list_to_str(movie.get("runtimes")),
         "countries": list_to_str(movie.get("countries")),
@@ -157,10 +303,10 @@ async def get_poster(query, bulk=False, id=False, file=None):
         "release_date": date,
         "year": movie.get("year"),
         "genres": list_to_str(movie.get("genres")),
-        "poster": movie.get("full-size cover url", START_IMG),
+        "poster": poster_url,
         "plot": plot,
-        "rating": str(movie.get("rating")),
-        "url": f"https://www.imdb.com/title/tt{movieid}",
+        "rating": str(movie.get("rating")) if movie.get("rating") else "N/A",
+        "url": f"https://www.imdb.com/title/tt{movieid}" if movieid else "N/A",
     }
 
 
