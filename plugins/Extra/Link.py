@@ -43,10 +43,10 @@ async def get_movie_data_for_link(query):
         movie = imdb.get_movie(movie_id)
 
         # Correctly get the poster URL using the 'cover url' key
-        poster_url = movie.get('cover url')
+        poster_url = movie.get('full-size cover url') or movie.get('cover url')
 
         return {
-            "title": movie.get("title", "Unknown Title"),
+            "title": movie.get("title", "N/A"),
             "year": str(movie.get("year", "N/A")),
             "poster": poster_url,
             "plot": movie.get('plot outline') or (movie.get('plot') and movie.get('plot')[0]) or "No plot available",
