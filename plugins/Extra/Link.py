@@ -15,7 +15,7 @@ from imdb import Cinemagoer
 # --- Configuration ---
 REDIRECT_URL = "https://files.hdcinema.fun/"
 LINK_DB_FILE = "permanent_links.json"
-LINK_ID_PREFIX = "link_"
+LINK_ID_PREFIX = "link_" # This prefix is crucial to avoid conflicts
 
 # --- Globals ---
 PREVIEW_CACHE = {}
@@ -35,6 +35,9 @@ def save_link_db(db_data):
 
 # ==================== IMDb & Caption Logic ====================
 async def get_movie_data_for_link(query):
+    """
+    Fetches movie data using cinemagoer, prioritizing text info.
+    """
     try:
         cleaned_query = re.sub(r'\b(1080p|720p|480p|4k|web-dl|bluray|hdrip|webrip)\b|\.|_', '', query, flags=re.IGNORECASE).strip()
         movies = imdb.search_movie(cleaned_query)
@@ -54,6 +57,7 @@ async def get_movie_data_for_link(query):
         return None
 
 def generate_caption(**kwargs):
+    """Generates a well-formatted caption without the plot."""
     title = kwargs.get("title", "N/A")
     year = kwargs.get("year", "N/A")
     genre = kwargs.get("genre", "N/A")
@@ -111,6 +115,7 @@ async def generate_link_command(client, message):
     await send_preview(client, message.from_user.id, preview_id)
 
 async def send_preview(client, user_id, preview_id):
+    """Sends the preview message to the admin for confirmation, now with edit buttons."""
     preview_data = PREVIEW_CACHE.get(preview_id)
     if not preview_data: return
 
@@ -126,6 +131,12 @@ async def send_preview(client, user_id, preview_id):
             InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_post#{preview_id}")
         ]
     ])
+
+    try:
+        if "preview_message_id" in preview_data:
+            await client.delete_messages(user_id, preview_data["preview_message_id"])
+    except:
+        pass
 
     try:
         if preview_data.get("poster"):
@@ -239,10 +250,6 @@ async def handle_admin_input(client, message: Message):
 
     del ADMIN_CONVERSATION_STATE[admin_id]
     await message.reply("🔄 **Generating updated preview...**")
-    if "preview_message_id" in preview_data:
-        try:
-            await client.delete_messages(admin_id, preview_data["preview_message_id"])
-        except: pass
     await send_preview(client, admin_id, preview_id)
 
 # ==================== /start Command Handler for Permanent Links ====================
@@ -266,4 +273,4 @@ async def permanent_link_handler(client, message):
 
     raise ContinuePropagation
 
-print("✅ Permanent Link System (Link.py) loaded successfully with Admin Customizations!")
+print("✅ Permanent Link System with Full Admin Customization Loaded Successfully!")
