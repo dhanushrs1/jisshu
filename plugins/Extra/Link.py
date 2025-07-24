@@ -22,7 +22,7 @@ imdb = Cinemagoer()
 # ==================== CREATE LINK FUNCTIONALITY ====================
 
 async def get_movie_data_for_link(query):
-    """Fetch movie data using cinemagoer library directly"""
+    """Fetch movie data using cinemagoer library directly, with fallback for poster"""
     try:
         # Clean the query to improve search accuracy
         cleaned_query = re.sub(
@@ -42,7 +42,7 @@ async def get_movie_data_for_link(query):
         movie_id = movies[0].movieID
         movie = imdb.get_movie(movie_id)
 
-        # Correctly get the poster URL using the 'cover url' key
+        # Attempt to get the poster URL
         poster_url = movie.get('full-size cover url') or movie.get('cover url')
 
         return {
