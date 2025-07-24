@@ -11,64 +11,66 @@ from pyrogram.errors import FloodWait, MessageNotModified, ChatAdminRequired
 from info import ADMINS, REDIRECT_CHANNEL, START_IMG
 from utils import temp, get_poster, list_to_str
 from database.ia_filterdb import get_search_results
+from imdb import Cinemagoer
 
 # Global dictionaries for state management
 ADMIN_CONVERSATION_STATE = {}
 PREVIEW_CACHE = {}
 ACTIVE_UPDATES = {}
+imdb = Cinemagoer()
 
 # ==================== CREATE LINK FUNCTIONALITY ====================
 
 async def get_movie_data_for_link(query):
-    """Fetch movie data using the existing IMDb integration from utils.py"""
+    """Fetch movie data using cinemagoer library directly"""
     try:
-        # Clean the query by removing quality indicators and common keywords
+        # Clean the query to improve search accuracy
         cleaned_query = re.sub(
-            r'\b(1080p|720p|480p|4k|dvdrip|hdrip|web-dl|bluray|webrip|hdcam|cam|ts)\b', 
+            r'\b(1080p|720p|480p|4k|dvdrip|hdrip|web-dl|bluray|webrip|hdcam|cam|ts)\b',
             '', query, flags=re.IGNORECASE
         ).strip()
-        
-        # Remove year patterns like (2023) or [2023]
         cleaned_query = re.sub(r'[\(\[]?\d{4}[\)\]]?', '', cleaned_query).strip()
-        
-        # Remove file extensions
-        cleaned_query = re.sub(r'\.(mkv|mp4|avi|mov|wmv)$', '', cleaned_query, flags=re.IGNORECASE)
-        
-        # Use the existing get_poster function from utils.py
-        movie_data = await get_poster(cleaned_query, bulk=False, id=False, file=query)
-        
-        if movie_data:
-            return {
-                "title": movie_data.get("title", "Unknown Title"),
-                "year": str(movie_data.get("year", "N/A")),
-                "poster": movie_data.get("poster") if movie_data.get("poster") != START_IMG else None,
-                "plot": movie_data.get("plot", "No plot available"),
-                "rating": movie_data.get("rating", "N/A"),
-                "genre": movie_data.get("genres", "N/A"),
-                "director": movie_data.get("director", "N/A"),
-                "cast": movie_data.get("cast", "N/A"),
-                "runtime": movie_data.get("runtime", "N/A"),
-                "languages": movie_data.get("languages", "N/A"),
-                "countries": movie_data.get("countries", "N/A")
-            }
-        else:
+        cleaned_query = re.sub(r'\.(mkv|mp4|avi|mov|wmv)$', '', cleaned_query, flags=re.IGNORECASE).strip()
+
+        # Search for the movie
+        movies = imdb.search_movie(cleaned_query)
+        if not movies:
             print(f"No IMDb data found for: {cleaned_query}")
             return None
-            
+
+        # Get the first result and fetch detailed information
+        movie_id = movies[0].movieID
+        movie = imdb.get_movie(movie_id)
+
+        # Correctly get the poster URL using the 'cover url' key
+        poster_url = movie.get('cover url')
+
+        return {
+            "title": movie.get("title", "Unknown Title"),
+            "year": str(movie.get("year", "N/A")),
+            "poster": poster_url,
+            "plot": movie.get('plot outline') or (movie.get('plot') and movie.get('plot')[0]) or "No plot available",
+            "rating": str(movie.get("rating", "N/A")),
+            "genre": list_to_str(movie.get("genres", [])),
+            "director": list_to_str(movie.get("director", [])),
+            "cast": list_to_str(movie.get("cast", [])),
+            "runtime": list_to_str(movie.get("runtimes", []))
+        }
     except Exception as e:
         print(f"IMDb Error for /createlink: {e}")
         return None
 
+
 def generate_caption(title, year, plot=None, rating=None, genre=None, director=None, cast=None, runtime=None):
     """Generate a well-formatted caption for the post with enhanced details"""
     caption = f"🎬 **{title} ({year})**\n\n"
-    
+
     if genre and genre != "N/A":
         caption += f"🎭 **Genre:** {genre}\n"
-    
+
     if rating and rating != "N/A" and rating != "0":
         caption += f"⭐ **IMDb Rating:** {rating}/10\n"
-    
+
     if director and director != "N/A":
         # Limit director names to avoid too long captions
         director_list = director.split(", ")[:2]  # Show max 2 directors
@@ -76,10 +78,10 @@ def generate_caption(title, year, plot=None, rating=None, genre=None, director=N
         if len(director_list) < len(director.split(", ")):
             director_text += " & others"
         caption += f"🎯 **Director:** {director_text}\n"
-    
+
     if runtime and runtime != "N/A":
         caption += f"⏱️ **Runtime:** {runtime} min\n"
-    
+
     if cast and cast != "N/A":
         # Limit cast to first 3 names to avoid long captions
         cast_list = cast.split(", ")[:3]
@@ -87,13 +89,13 @@ def generate_caption(title, year, plot=None, rating=None, genre=None, director=N
         if len(cast_list) < len(cast.split(", ")):
             cast_text += " & others"
         caption += f"👥 **Cast:** {cast_text}\n"
-    
+
     if plot and plot != "No plot available" and len(plot) > 10:
         # Limit plot length for better readability
         if len(plot) > 200:
             plot = plot[:200] + "..."
         caption += f"\n📝 **Plot:** {plot}\n"
-    
+
     caption += "\n📂 **Click the button below to get your files.**"
     return caption
 
@@ -102,11 +104,11 @@ async def send_preview(client, user_id, preview_id):
     if preview_id not in PREVIEW_CACHE:
         await client.send_message(user_id, "❌ Preview data not found. Please try again.")
         return
-        
+
     preview_data = PREVIEW_CACHE[preview_id]
-    
+
     caption = f"**🔍 PREVIEW**\n\n{preview_data['caption']}"
-    
+
     markup = InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ Confirm & Post", callback_data=f"confirm_post#{preview_id}")],
         [
@@ -118,18 +120,18 @@ async def send_preview(client, user_id, preview_id):
             InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_post#{preview_id}")
         ]
     ])
-    
+
     original_message_id = preview_data.get("preview_message_id")
 
     try:
         chat_id = user_id
-        
+
         if original_message_id:
             try:
                 original_message = await client.get_messages(chat_id, original_message_id)
                 if preview_data["poster"] and preview_data["poster"].startswith("http"):
                     await original_message.edit_media(
-                        media={"type": "photo", "media": preview_data["poster"], "caption": caption}, 
+                        media={"type": "photo", "media": preview_data["poster"], "caption": caption},
                         reply_markup=markup
                     )
                 else:
@@ -140,7 +142,7 @@ async def send_preview(client, user_id, preview_id):
                 print(f"Error editing message: {e}")
                 # If editing fails, send a new message
                 original_message_id = None
-        
+
         if not original_message_id:
             if preview_data["poster"] and preview_data["poster"].startswith("http"):
                 sent_msg = await client.send_photo(
@@ -148,14 +150,14 @@ async def send_preview(client, user_id, preview_id):
                 )
             else:
                 sent_msg = await client.send_message(
-                    chat_id, text=f"**🔍 PREVIEW (No/Invalid Poster)**\n\n{caption}", 
+                    chat_id, text=f"**🔍 PREVIEW (No/Invalid Poster)**\n\n{caption}",
                     reply_markup=markup, disable_web_page_preview=True
                 )
             PREVIEW_CACHE[preview_id]["preview_message_id"] = sent_msg.id
-            
+
     except Exception as e:
         await client.send_message(
-            user_id, 
+            user_id,
             f"❌ **Error updating preview:** `{e}`\n\nThe poster URL might be invalid. Please use the edit button to fix it."
         )
 
@@ -164,7 +166,7 @@ async def generate_link_command(client, message):
     """Enhanced createlink command using integrated IMDb data fetching"""
     if REDIRECT_CHANNEL == 0:
         return await message.reply("❌ `REDIRECT_CHANNEL` is not set in your configuration.")
-        
+
     if len(message.command) < 2:
         return await message.reply(
             "ℹ️ **Usage:** `/createlink <movie name>`\n\n"
@@ -181,7 +183,7 @@ async def generate_link_command(client, message):
                 f"❌ **No files found for:** `{search_query}`\n\n"
                 "Cannot create a link without files in the database."
             )
-        
+
         accurate_name = files[0].file_name
         await sts.edit(f"✅ **Found file:** `{accurate_name}`\n\n🎬 **Fetching movie details from IMDb...**")
 
@@ -205,20 +207,20 @@ async def generate_link_command(client, message):
         # Generate bot link
         bot_username = temp.U_NAME
         start_link = f"https://t.me/{bot_username}?start=getfile-{search_query.replace(' ', '-')}"
-        
+
         # Create preview data
         preview_id = secrets.token_hex(8)
         caption = generate_caption(
-            imdb_data["title"], 
-            imdb_data["year"], 
-            imdb_data.get("plot"), 
-            imdb_data.get("rating"), 
+            imdb_data["title"],
+            imdb_data["year"],
+            imdb_data.get("plot"),
+            imdb_data.get("rating"),
             imdb_data.get("genre"),
             imdb_data.get("director"),
             imdb_data.get("cast"),
             imdb_data.get("runtime")
         )
-        
+
         PREVIEW_CACHE[preview_id] = {
             "poster": imdb_data.get("poster"),
             "title": imdb_data["title"],
@@ -238,7 +240,7 @@ async def generate_link_command(client, message):
 
         await sts.delete()
         await send_preview(client, message.from_user.id, preview_id)
-        
+
     except Exception as e:
         await sts.edit(f"❌ **Error occurred:** `{e}`")
         print(f"Error in generate_link_command: {e}")
@@ -246,14 +248,14 @@ async def generate_link_command(client, message):
 @Client.on_callback_query(filters.regex(r"^edit_post#"))
 async def edit_post_callback(client, query):
     """Handle edit button callbacks with validation"""
-    if query.from_user.id not in ADMINS: 
+    if query.from_user.id not in ADMINS:
         return await query.answer("❌ This is not for you!", show_alert=True)
-    
+
     try:
         _, edit_type, preview_id = query.data.split("#")
     except ValueError:
         return await query.answer("❌ Invalid callback data!", show_alert=True)
-    
+
     if preview_id not in PREVIEW_CACHE:
         return await query.message.edit_text("❌ This request has expired or is invalid.")
 
@@ -262,17 +264,17 @@ async def edit_post_callback(client, query):
         return await query.answer("❌ You can only edit your own previews!", show_alert=True)
 
     ADMIN_CONVERSATION_STATE[query.from_user.id] = {
-        "type": edit_type, 
+        "type": edit_type,
         "preview_id": preview_id,
         "created_at": time.time()
     }
-    
+
     prompts = {
         "poster": "🖼️ **Please send the new poster URL now.**\n\nSend a direct image URL (jpg, png, etc.)",
         "details": "✏️ **Please send the new details in this format:**\n\n`Title | Year`\n\n**Example:** `Avengers Endgame | 2019`",
         "caption": "📝 **Please send the new caption text.**\n\nThis will replace the entire description."
     }
-    
+
     prompt = prompts.get(edit_type, "Please send your input:")
     await query.message.reply_text(prompt)
     await query.answer()
@@ -290,7 +292,7 @@ def create_admin_input_filter():
         if message.text and message.text.startswith('/'):
             return False
         return True
-    
+
     return filters.create(admin_edit_filter)
 
 @Client.on_message(filters.private & filters.text & create_admin_input_filter())
@@ -304,35 +306,35 @@ async def handle_admin_input(client, message: Message):
 
     preview_id = state["preview_id"]
     edit_type = state["type"]
-    
+
     if preview_id not in PREVIEW_CACHE:
         del ADMIN_CONVERSATION_STATE[admin_id]
         return await message.reply("❌ Preview data expired. Please create a new link.")
-    
+
     try:
         if edit_type == "poster":
             # Validate URL
             if not message.text.startswith(("http://", "https://")):
                 return await message.reply("❌ Please send a valid URL starting with http:// or https://")
-            
+
             PREVIEW_CACHE[preview_id]["poster"] = message.text.strip()
             await message.reply("✅ Poster updated!")
-            
+
         elif edit_type == "details":
             try:
                 if "|" not in message.text:
                     return await message.reply("❌ Invalid format. Please use `Title | Year`")
-                    
+
                 title, year = message.text.split("|", 1)
                 title = title.strip()
                 year = year.strip()
-                
+
                 if not title or not year:
                     return await message.reply("❌ Both title and year are required.")
-                
+
                 PREVIEW_CACHE[preview_id]["title"] = title
                 PREVIEW_CACHE[preview_id]["year"] = year
-                
+
                 # Regenerate caption with new details
                 PREVIEW_CACHE[preview_id]["caption"] = generate_caption(
                     title, year,
@@ -344,21 +346,21 @@ async def handle_admin_input(client, message: Message):
                     PREVIEW_CACHE[preview_id].get("runtime")
                 )
                 await message.reply("✅ Title and year updated!")
-                
+
             except Exception as e:
                 return await message.reply(f"❌ Error updating details: `{e}`")
-                
+
         elif edit_type == "caption":
             PREVIEW_CACHE[preview_id]["caption"] = message.text.strip()
             await message.reply("✅ Caption updated!")
 
         # Clean up conversation state
         del ADMIN_CONVERSATION_STATE[admin_id]
-        
+
         # Send updated preview
         await message.reply("🔄 **Generating updated preview...**")
         await send_preview(client, admin_id, preview_id)
-        
+
     except Exception as e:
         await message.reply(f"❌ **Error updating preview:** `{e}`")
         print(f"Error in handle_admin_input: {e}")
@@ -366,14 +368,14 @@ async def handle_admin_input(client, message: Message):
 @Client.on_callback_query(filters.regex(r"^(confirm_post|cancel_post)#"))
 async def confirm_cancel_handler(client, query):
     """Handle confirm and cancel callbacks with better error handling"""
-    if query.from_user.id not in ADMINS: 
+    if query.from_user.id not in ADMINS:
         return await query.answer("❌ This is not for you!", show_alert=True)
-        
+
     try:
         action, preview_id = query.data.split("#")
     except ValueError:
         return await query.answer("❌ Invalid callback data!", show_alert=True)
-    
+
     if preview_id not in PREVIEW_CACHE:
         return await query.message.edit_caption("❌ This request has expired or is invalid.")
 
@@ -384,48 +386,48 @@ async def confirm_cancel_handler(client, query):
     if action == "confirm_post":
         preview_data = PREVIEW_CACHE[preview_id]
         await query.message.edit_caption("✅ **Confirmed!** Posting to channel...")
-        
+
         try:
             final_markup = InlineKeyboardMarkup([
                 [InlineKeyboardButton("✅ Click Here to Get Files ✅", url=preview_data["start_link"])]
             ])
-            
+
             if preview_data["poster"] and preview_data["poster"].startswith("http"):
                 sent_message = await client.send_photo(
-                    chat_id=REDIRECT_CHANNEL, 
+                    chat_id=REDIRECT_CHANNEL,
                     photo=preview_data["poster"],
-                    caption=preview_data["caption"], 
+                    caption=preview_data["caption"],
                     reply_markup=final_markup
                 )
             else:
                 sent_message = await client.send_message(
-                    chat_id=REDIRECT_CHANNEL, 
+                    chat_id=REDIRECT_CHANNEL,
                     text=preview_data["caption"],
-                    reply_markup=final_markup, 
+                    reply_markup=final_markup,
                     disable_web_page_preview=True
                 )
-                
+
             success_message = (
                 f"✅ **Post created successfully!**\n\n"
                 f"📱 **Channel Link:** `{sent_message.link}`\n"
                 f"🆔 **Message ID:** `{sent_message.id}`"
             )
             await query.message.edit_caption(success_message, reply_markup=None)
-            
+
         except Exception as e:
             error_message = f"❌ **Error posting to channel:** `{e}`\n\nPlease check your channel settings and bot permissions."
             await query.message.edit_caption(error_message)
             print(f"Error posting to channel: {e}")
         finally:
             # Clean up
-            if preview_id in PREVIEW_CACHE: 
+            if preview_id in PREVIEW_CACHE:
                 del PREVIEW_CACHE[preview_id]
             # Clean up any remaining conversation state
             if query.from_user.id in ADMIN_CONVERSATION_STATE:
                 del ADMIN_CONVERSATION_STATE[query.from_user.id]
-    
+
     elif action == "cancel_post":
-        if preview_id in PREVIEW_CACHE: 
+        if preview_id in PREVIEW_CACHE:
             del PREVIEW_CACHE[preview_id]
         # Clean up conversation state
         if query.from_user.id in ADMIN_CONVERSATION_STATE:
@@ -439,7 +441,7 @@ async def process_message_buttons(reply_markup, new_bot_username):
     """Process and update buttons in a message's reply markup"""
     updated = False
     new_keyboard = []
-    
+
     for row in reply_markup.inline_keyboard:
         new_row = []
         for button in row:
@@ -447,7 +449,7 @@ async def process_message_buttons(reply_markup, new_bot_username):
                 # Extract the query part
                 query_part = button.url.split("?start=", 1)[1]
                 new_url = f"https://t.me/{new_bot_username}?start={query_part}"
-                
+
                 if button.url != new_url:
                     new_button = InlineKeyboardButton(button.text, url=new_url)
                     new_row.append(new_button)
@@ -457,7 +459,7 @@ async def process_message_buttons(reply_markup, new_bot_username):
             else:
                 new_row.append(button)
         new_keyboard.append(new_row)
-    
+
     return InlineKeyboardMarkup(new_keyboard) if updated else None
 
 def calculate_success_rate(session_data):
@@ -470,7 +472,7 @@ def calculate_success_rate(session_data):
 def generate_completion_report(session_data, new_bot_username):
     """Generate a comprehensive completion report"""
     success_rate = calculate_success_rate(session_data)
-    
+
     report = (
         f"✅ **Link Update Complete!**\n\n"
         f"**Target Bot:** `@{new_bot_username}`\n"
@@ -479,7 +481,7 @@ def generate_completion_report(session_data, new_bot_username):
         f"**Errors:** `{session_data['error_count']}`\n"
         f"**Success Rate:** `{success_rate}%`\n\n"
     )
-    
+
     if session_data.get("start_time") and session_data.get("completion_time"):
         try:
             start_time = datetime.fromisoformat(session_data["start_time"])
@@ -488,7 +490,7 @@ def generate_completion_report(session_data, new_bot_username):
             report += f"**Duration:** `{str(duration).split('.')[0]}`\n\n"
         except:
             pass
-    
+
     if session_data["error_count"] > 0:
         report += f"⚠️ **{session_data['error_count']} errors occurred during the process.**\n"
         if len(session_data["errors"]) > 0:
@@ -496,7 +498,7 @@ def generate_completion_report(session_data, new_bot_username):
             report += "**Recent errors:**\n"
             for error in recent_errors:
                 report += f"• Message ID `{error['message_id']}`: {error['error'][:50]}...\n"
-    
+
     report += f"\n🎉 **All links now point to @{new_bot_username}!**"
     return report
 
@@ -513,21 +515,21 @@ async def cleanup_backup_file(file_path, delay=300):
 @Client.on_message(filters.command("updatelinks") & filters.user(ADMINS))
 async def update_all_links(client, message):
     """Enhanced updatelinks command with better error handling and safety features"""
-    
+
     # Validation checks
     if REDIRECT_CHANNEL == 0:
         return await message.reply(
             "❌ **Configuration Error**\n\n"
             "`REDIRECT_CHANNEL` is not set. Please configure it in your settings."
         )
-    
+
     if len(message.command) < 2:
         return await message.reply(
             "ℹ️ **Usage:** `/updatelinks NEW_BOT_USERNAME`\n\n"
             "**Example:** `/updatelinks MyNewBot`\n"
             "⚠️ **Note:** Provide username without @ symbol"
         )
-    
+
     # Prevent multiple simultaneous updates
     admin_id = message.from_user.id
     if admin_id in ACTIVE_UPDATES:
@@ -537,16 +539,16 @@ async def update_all_links(client, message):
             f"Started at: `{ACTIVE_UPDATES[admin_id]['start_time']}`\n\n"
             "Please wait for it to complete or use `/cancelupdate` to stop it."
         )
-    
+
     new_bot_username = message.command[1].strip().replace("@", "")
-    
+
     # Validate bot username format
     if not new_bot_username.replace("_", "").replace("Bot", "").isalnum():
         return await message.reply(
             "❌ **Invalid Username**\n\n"
             "Bot username should only contain letters, numbers, and underscores."
         )
-    
+
     # Check if bot exists (optional validation)
     try:
         bot_info = await client.get_users(new_bot_username)
@@ -566,7 +568,7 @@ async def update_all_links(client, message):
                 "• Network issues\n\n"
                 f"To proceed anyway, use: `/updatelinks {new_bot_username} confirm`"
             )
-    
+
     # Progress tracking setup
     progress_file = f"update_progress_{admin_id}.json"
     session_data = {
@@ -579,7 +581,7 @@ async def update_all_links(client, message):
         "error_count": 0,
         "errors": []
     }
-    
+
     # Check for existing progress file
     if os.path.exists(progress_file):
         try:
@@ -594,27 +596,27 @@ async def update_all_links(client, message):
                 })
         except Exception as e:
             print(f"Error loading progress file: {e}")
-    
+
     # Mark update as active
     ACTIVE_UPDATES[admin_id] = {
         "start_time": session_data["start_time"],
         "status": "running",
         "progress_file": progress_file
     }
-    
+
     # Initial status message
     sts_text = f"🔄 **Starting Link Update Process**\n\n"
     sts_text += f"**Target Bot:** `@{new_bot_username}`\n"
     sts_text += f"**Channel:** `{REDIRECT_CHANNEL}`\n"
-    
+
     if session_data["last_processed_id"] > 0:
         sts_text += f"**Resuming from Message ID:** `{session_data['last_processed_id']}`\n"
         sts_text += f"**Previously Processed:** `{session_data['total_processed']}` messages\n"
         sts_text += f"**Previously Updated:** `{session_data['updated_count']}` links\n"
-    
+
     sts_text += "\n⏳ **Processing messages...**"
     sts = await message.reply(sts_text)
-    
+
     try:
         # Check bot permissions in the channel
         try:
@@ -630,31 +632,31 @@ async def update_all_links(client, message):
             return
         except Exception as e:
             print(f"Permission check error: {e}")
-        
+
         last_update_time = time.time()
         batch_processed = 0
-        
+
         # Main processing loop
         async for msg in client.get_chat_history(REDIRECT_CHANNEL):
             # Check if update was cancelled
             if admin_id not in ACTIVE_UPDATES:
                 await sts.edit("❌ **Update Cancelled by User**")
                 return
-            
+
             # Skip messages if resuming
             if session_data["last_processed_id"] != 0 and msg.id >= session_data["last_processed_id"]:
                 continue
-            
+
             session_data["total_processed"] += 1
             batch_processed += 1
-            
+
             # Process message if it has inline keyboard
             if msg.reply_markup and msg.reply_markup.inline_keyboard:
                 try:
                     updated_markup = await process_message_buttons(
                         msg.reply_markup, new_bot_username
                     )
-                    
+
                     if updated_markup:
                         await client.edit_message_reply_markup(
                             chat_id=msg.chat.id,
@@ -662,7 +664,7 @@ async def update_all_links(client, message):
                             reply_markup=updated_markup
                         )
                         session_data["updated_count"] += 1
-                        
+
                 except FloodWait as e:
                     print(f"FloodWait: Sleeping for {e.value} seconds")
                     await asyncio.sleep(e.value)
@@ -685,11 +687,11 @@ async def update_all_links(client, message):
                             "error": str(retry_error),
                             "timestamp": datetime.now().isoformat()
                         })
-                
+
                 except MessageNotModified:
                     # This is fine, message was already up to date
                     pass
-                
+
                 except Exception as e:
                     session_data["error_count"] += 1
                     error_info = {
@@ -699,19 +701,19 @@ async def update_all_links(client, message):
                     }
                     session_data["errors"].append(error_info)
                     print(f"Failed to update message {msg.id}: {e}")
-            
+
             # Update progress periodically
             current_time = time.time()
-            if (batch_processed >= 25 or 
-                current_time - last_update_time > 30 or 
+            if (batch_processed >= 25 or
+                current_time - last_update_time > 30 or
                 session_data["total_processed"] % 100 == 0):
-                
+
                 session_data["last_processed_id"] = msg.id
-                
+
                 # Save progress to file
                 with open(progress_file, "w") as f:
                     json.dump(session_data, f, indent=2)
-                
+
                 # Update status message
                 progress_text = (
                     f"🔄 **Link Update In Progress**\n\n"
@@ -723,37 +725,37 @@ async def update_all_links(client, message):
                     f"⏳ **Status:** Processing...\n"
                     f"📊 **Success Rate:** {calculate_success_rate(session_data)}%"
                 )
-                
+
                 try:
                     await sts.edit(progress_text)
                 except Exception as e:
                     print(f"Failed to update status message: {e}")
-                
+
                 last_update_time = current_time
                 batch_processed = 0
-                
+
                 # Add small delay to prevent overwhelming
                 await asyncio.sleep(0.5)
-        
+
         # Process completion
         session_data["completion_time"] = datetime.now().isoformat()
-        
+
         # Generate completion report
         completion_text = generate_completion_report(session_data, new_bot_username)
         await sts.edit(completion_text)
-        
+
         # Clean up progress file on successful completion
         if os.path.exists(progress_file):
             try:
                 # Keep a backup for a few minutes in case of issues
                 backup_file = f"{progress_file}.completed"
                 os.rename(progress_file, backup_file)
-                
+
                 # Schedule cleanup of backup file
                 asyncio.create_task(cleanup_backup_file(backup_file, delay=300))  # 5 minutes
             except Exception as e:
                 print(f"Error handling progress file: {e}")
-        
+
     except Exception as e:
         error_text = (
             f"❌ **Update Process Failed**\n\n"
@@ -765,13 +767,13 @@ async def update_all_links(client, message):
         )
         await sts.edit(error_text)
         print(f"Update process error: {e}")
-        
+
         # Save final progress
         session_data["error_info"] = str(e)
         session_data["failed_at"] = datetime.now().isoformat()
         with open(progress_file, "w") as f:
             json.dump(session_data, f, indent=2)
-    
+
     finally:
         # Clean up active updates tracking
         if admin_id in ACTIVE_UPDATES:
@@ -781,16 +783,16 @@ async def update_all_links(client, message):
 async def cancel_update(client, message):
     """Cancel an active update process"""
     admin_id = message.from_user.id
-    
+
     if admin_id not in ACTIVE_UPDATES:
         return await message.reply(
             "ℹ️ **No Active Update**\n\n"
             "You don't have any active update process running."
         )
-    
+
     # Remove from active updates (this will stop the main loop)
     update_info = ACTIVE_UPDATES.pop(admin_id)
-    
+
     await message.reply(
         f"❌ **Update Process Cancelled**\n\n"
         f"**Started at:** `{update_info['start_time']}`\n"
@@ -802,7 +804,7 @@ async def cancel_update(client, message):
 async def update_status(client, message):
     """Check the status of active updates"""
     admin_id = message.from_user.id
-    
+
     if admin_id not in ACTIVE_UPDATES:
         # Check if there's a progress file
         progress_file = f"update_progress_{admin_id}.json"
@@ -810,7 +812,7 @@ async def update_status(client, message):
             try:
                 with open(progress_file, "r") as f:
                     saved_data = json.load(f)
-                
+
                 status_text = (
                     f"📋 **Saved Progress Found**\n\n"
                     f"**Bot Username:** `@{saved_data.get('new_bot_username', 'Unknown')}`\n"
@@ -823,12 +825,12 @@ async def update_status(client, message):
                 return await message.reply(status_text)
             except Exception as e:
                 print(f"Error reading progress file: {e}")
-        
+
         return await message.reply(
             "ℹ️ **No Active Update**\n\n"
             "You don't have any active update process running or saved progress."
         )
-    
+
     update_info = ACTIVE_UPDATES[admin_id]
     await message.reply(
         f"🔄 **Update Process Running**\n\n"
@@ -843,7 +845,7 @@ async def update_status(client, message):
 async def cancel_edit_command(client, message):
     """Cancel any active edit operation"""
     admin_id = message.from_user.id
-    
+
     if admin_id in ADMIN_CONVERSATION_STATE:
         del ADMIN_CONVERSATION_STATE[admin_id]
         await message.reply("✅ **Edit operation cancelled.** You can now use other bot functions normally.")
@@ -855,23 +857,23 @@ async def cancel_edit_command(client, message):
 async def cleanup_expired_data():
     """Clean up expired preview data and conversation states"""
     current_time = time.time()
-    
+
     # Clean up previews older than 1 hour
     expired_previews = [
-        pid for pid, data in PREVIEW_CACHE.items() 
+        pid for pid, data in PREVIEW_CACHE.items()
         if current_time - data.get("created_at", current_time) > 3600
     ]
-    
+
     for pid in expired_previews:
         del PREVIEW_CACHE[pid]
         print(f"Cleaned up expired preview: {pid}")
-    
+
     # Clean up conversation states older than 30 minutes
     expired_states = [
-        uid for uid, state in ADMIN_CONVERSATION_STATE.items() 
+        uid for uid, state in ADMIN_CONVERSATION_STATE.items()
         if current_time - state.get("created_at", current_time) > 1800
     ]
-    
+
     for uid in expired_states:
         del ADMIN_CONVERSATION_STATE[uid]
         print(f"Cleaned up expired conversation state for user: {uid}")
