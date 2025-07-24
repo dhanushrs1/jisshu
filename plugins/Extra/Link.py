@@ -237,7 +237,8 @@ async def edit_post_callback(client, query):
     ADMIN_CONVERSATION_STATE[query.from_user.id] = {
         "type": edit_type, 
         "preview_id": preview_id,
-        "created_at": time.time()
+        "created_at": time.time(),
+        "awaiting_input": True  # Add flag to identify legitimate admin input
     }
     
     prompts = {
@@ -250,18 +251,19 @@ async def edit_post_callback(client, query):
     await query.message.reply_text(prompt)
     await query.answer()
 
-@Client.on_message(
-    filters.private & 
-    filters.user(ADMINS) & 
-    filters.text & 
-    ~filters.command(["start", "help", "createlink", "updatelinks", "cancelupdate", "updatestatus"])
-)
+# FIXED: Only handle admin input when specifically waiting for edit input
+@Client.on_message(filters.private & filters.user(ADMINS) & filters.text)
 async def handle_admin_input(client, message: Message):
-    """Handle admin input for editing previews"""
+    """Handle admin input for editing previews - ONLY when specifically awaiting input"""
     admin_id = message.from_user.id
     state = ADMIN_CONVERSATION_STATE.get(admin_id)
 
-    if not state:
+    # CRITICAL FIX: Only handle input if we're specifically awaiting it
+    if not state or not state.get("awaiting_input", False):
+        return  # Let other handlers process this message
+
+    # Skip if it's a command (let command handlers process it)
+    if message.text.startswith('/'):
         return
 
     preview_id = state["preview_id"]
@@ -891,6 +893,19 @@ Use `/linkhelp` for command information.
 """
     await message.reply(stats_text)
 
+# ==================== CANCEL EDIT COMMAND ====================
+
+@Client.on_message(filters.command("canceledit") & filters.user(ADMINS))
+async def cancel_edit_command(client, message):
+    """Cancel any active edit operation"""
+    admin_id = message.from_user.id
+    
+    if admin_id in ADMIN_CONVERSATION_STATE:
+        del ADMIN_CONVERSATION_STATE[admin_id]
+        await message.reply("✅ **Edit operation cancelled.** You can now use other bot functions normally.")
+    else:
+        await message.reply("ℹ️ **No active edit operation** to cancel.")
+
 # ==================== PERIODIC CLEANUP TASK ====================
 
 async def start_cleanup_task():
@@ -908,4 +923,5 @@ asyncio.create_task(start_cleanup_task())
 
 print("✅ Link Management System Loaded Successfully!")
 print("📝 Available Commands: /createlink, /updatelinks, /linkhelp, /linkstats")
-print("🔧 Management Commands: /cancelupdate, /updatestatus")
+print("🔧 Management Commands: /cancelupdate, /updatestatus, /canceledit")
+print("🔧 IMPORTANT: Admin input handler fixed - other bot functions should work normally now")
