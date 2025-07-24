@@ -7,20 +7,18 @@ import time
 from pyrogram import Client, filters, ContinuePropagation
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from info import ADMINS, REDIRECT_CHANNEL
-from utils import list_to_str
+from utils import list_to_str, get_poster # Re-using the proven get_poster function
 from database.ia_filterdb import get_search_results
 from plugins.pm_filter import auto_filter
-from imdb import Cinemagoer
 
 # --- Configuration ---
 REDIRECT_URL = "https://files.hdcinema.fun/"
 LINK_DB_FILE = "permanent_links.json"
-LINK_ID_PREFIX = "link_" # This prefix is crucial to avoid conflicts
+LINK_ID_PREFIX = "link_"
 
 # --- Globals ---
 PREVIEW_CACHE = {}
 ADMIN_CONVERSATION_STATE = {}
-imdb = Cinemagoer()
 
 # --- Link Database Functions ---
 def load_link_db():
@@ -33,34 +31,12 @@ def save_link_db(db_data):
     with open(LINK_DB_FILE, "w") as f:
         json.dump(db_data, f, indent=4)
 
-# ==================== IMDb & Caption Logic ====================
-async def get_movie_data_for_link(query):
-    """
-    Fetches movie data using cinemagoer, prioritizing text info.
-    """
-    try:
-        cleaned_query = re.sub(r'\b(1080p|720p|480p|4k|web-dl|bluray|hdrip|webrip)\b|\.|_', '', query, flags=re.IGNORECASE).strip()
-        movies = imdb.search_movie(cleaned_query)
-        if not movies: return None
-        
-        movie = imdb.get_movie(movies[0].movieID)
-        return {
-            "title": movie.get("title", "N/A"),
-            "year": str(movie.get("year", "N/A")),
-            "poster": movie.get('full-size cover url') or movie.get('cover url'),
-            "rating": str(movie.get("rating", "N/A")),
-            "genre": list_to_str(movie.get("genres", [])),
-            "runtime": list_to_str(movie.get("runtimes", []))
-        }
-    except Exception as e:
-        print(f"IMDb Error in Link.py: {e}")
-        return None
-
+# ==================== Caption Logic ====================
 def generate_caption(**kwargs):
     """Generates a well-formatted caption without the plot."""
     title = kwargs.get("title", "N/A")
     year = kwargs.get("year", "N/A")
-    genre = kwargs.get("genre", "N/A")
+    genre = kwargs.get("genres", "N/A") # Corrected key
     rating = kwargs.get("rating", "N/A")
     runtime = kwargs.get("runtime", "N/A")
 
@@ -85,7 +61,8 @@ async def generate_link_command(client, message):
     if not files:
         return await sts.edit(f"❌ **No files found for:** `{search_query}` in the bot's database.")
 
-    imdb_data = await get_movie_data_for_link(search_query) or {}
+    # Using the same robust get_poster function from utils.py
+    imdb_data = await get_poster(search_query) or {}
     
     unique_id = secrets.token_hex(4)
     link_id_with_prefix = f"{LINK_ID_PREFIX}{unique_id}"
@@ -96,7 +73,7 @@ async def generate_link_command(client, message):
     
     permanent_link = f"{REDIRECT_URL}?id={link_id_with_prefix}"
     
-    # Use search_query as fallback title if IMDb fails
+    # Set default values if IMDb fetch fails
     imdb_data.setdefault("title", search_query.title())
     imdb_data.setdefault("year", "N/A")
     
@@ -115,7 +92,7 @@ async def generate_link_command(client, message):
     await send_preview(client, message.from_user.id, preview_id)
 
 async def send_preview(client, user_id, preview_id):
-    """Sends the preview message to the admin for confirmation, now with edit buttons."""
+    """Sends or updates the preview message to the admin for confirmation."""
     preview_data = PREVIEW_CACHE.get(preview_id)
     if not preview_data: return
 
@@ -135,8 +112,7 @@ async def send_preview(client, user_id, preview_id):
     try:
         if "preview_message_id" in preview_data:
             await client.delete_messages(user_id, preview_data["preview_message_id"])
-    except:
-        pass
+    except: pass
 
     try:
         if preview_data.get("poster"):
@@ -146,7 +122,9 @@ async def send_preview(client, user_id, preview_id):
         
         preview_data["preview_message_id"] = sent_message.id
     except Exception as e:
-        await client.send_message(user_id, f"**Could not send preview:** `{e}`\n\n{caption}", reply_markup=markup, disable_web_page_preview=True)
+        sent_message = await client.send_message(user_id, f"**Could not send preview:** `{e}`\n\n{caption}", reply_markup=markup, disable_web_page_preview=True)
+        preview_data["preview_message_id"] = sent_message.id
+
 
 @Client.on_callback_query(filters.regex(r"^(confirm_post|cancel_post)#"))
 async def confirm_cancel_handler(client, query):
@@ -242,7 +220,7 @@ async def handle_admin_input(client, message: Message):
                 return
 
             details = preview_data["details"]
-            details["title"], details["year"], details["rating"], details["genre"], details["runtime"] = parts
+            details["title"], details["year"], details["rating"], details["genres"], details["runtime"] = parts
             preview_data["caption"] = generate_caption(**details)
             await message.reply("✅ Movie details and caption updated!")
         except Exception as e:
