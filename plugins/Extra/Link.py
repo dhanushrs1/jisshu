@@ -11,7 +11,7 @@ from pyrogram import Client, filters, ContinuePropagation
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import DuplicateKeyError
-from info import ADMINS, REDIRECT_CHANNEL, OMDB_API_KEY, DATABASE_URI
+from info import ADMINS, REDIRECT_CHANNEL, DATABASE_URI
 from utils import list_to_str
 from database.ia_filterdb import get_search_results
 from plugins.pm_filter import auto_filter
